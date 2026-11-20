@@ -1,0 +1,6 @@
+{
+  "name": "Sentinela VPN & Radar de Scripts",
+  "description": "Protótipo local em HTML, CSS e JavaScript puro para simulação de VPN, bloqueio de rastreadores e scripts A/B, detecção de anomalias/bots e persistência em IndexedDB/localStorage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

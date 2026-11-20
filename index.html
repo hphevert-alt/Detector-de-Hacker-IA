@@ -1,0 +1,1124 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AEGIS AI — Vigilante contra Invasões de IA</title>
+    <meta
+      name="description"
+      content="AEGIS AI — Escudo protetor local contra invasões automatizadas de IA, bots maliciosos, rastreadores e scripts A/B com persistência em IndexedDB/localStorage."
+    />
+    <meta property="og:title" content="AEGIS AI — Vigilante contra Invasões de IA" />
+    <meta
+      property="og:description"
+      content="AEGIS AI — Escudo protetor local contra invasões automatizadas de IA, bots maliciosos, rastreadores e scripts A/B com persistência em IndexedDB/localStorage."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#080c14" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AEGIS AI" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div id="mobile-backdrop" class="mobile-backdrop" hidden></div>
+
+      <aside id="sidebar" class="sidebar" aria-label="Navegação principal">
+        <div class="sidebar-header">
+          <a href="#shield" class="brand-wordmark" data-nav="shield">
+            <svg
+              class="brand-icon"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+            <span>AEGIS AI</span>
+          </a>
+          <button
+            id="close-sidebar-btn"
+            class="icon-btn mobile-only"
+            type="button"
+            aria-label="Fechar menu"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Abas do centro de defesa">
+          <button
+            type="button"
+            class="nav-item is-active"
+            data-screen="shield"
+            aria-current="page"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span>Escudo Global</span>
+          </button>
+
+          <button type="button" class="nav-item" data-screen="logs">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <circle cx="12" cy="12" r="4" />
+              <line x1="12" y1="3" x2="12" y2="12" />
+            </svg>
+            <span>Radar &amp; Logs</span>
+            <span id="nav-alert-count" class="nav-count tabular-nums" hidden>0</span>
+          </button>
+
+          <button type="button" class="nav-item" data-screen="rules">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="M12 8v4" />
+              <path d="M12 16h.01" />
+            </svg>
+            <span>Regras &amp; Defesa</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="meta-line">
+            <span>Banco Local</span>
+            <span aria-hidden="true">·</span>
+            <span id="sidebar-storage-mode" class="mono">IndexedDB</span>
+          </div>
+          <div class="meta-line">
+            <span>DNS Seguro</span>
+            <span aria-hidden="true">·</span>
+            <span id="sidebar-dns-ip" class="mono tabular-nums">1.1.1.2</span>
+          </div>
+        </div>
+      </aside>
+
+      <div class="main-column">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button
+              id="open-sidebar-btn"
+              class="icon-btn mobile-only"
+              type="button"
+              aria-label="Abrir menu"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+            <div class="breadcrumb" aria-label="Localização atual">
+              <span class="breadcrumb-root">AEGIS AI</span>
+              <span class="breadcrumb-sep" aria-hidden="true">/</span>
+              <span id="topbar-screen-title" class="breadcrumb-current">Escudo Global</span>
+            </div>
+          </div>
+
+          <nav class="topbar-quick-nav" aria-label="Abas principais">
+            <button type="button" class="top-link is-active" data-screen="shield">
+              Escudo Global
+            </button>
+            <button type="button" class="top-link" data-screen="logs">
+              Radar &amp; Logs
+            </button>
+            <button type="button" class="top-link" data-screen="rules">
+              Regras &amp; Defesa
+            </button>
+          </nav>
+
+          <div class="topbar-actions">
+            <button
+              id="topbar-sound-btn"
+              type="button"
+              class="btn btn-ghost btn-sm"
+              aria-pressed="true"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+              <span id="topbar-sound-label">Som de Alerta: Ativado</span>
+            </button>
+            <button id="topbar-vpn-btn" type="button" class="btn btn-primary">
+              Pausar Vigilância
+            </button>
+          </div>
+        </header>
+
+        <div
+          id="red-alert-banner"
+          class="red-alert-banner"
+          role="alertdialog"
+          aria-labelledby="red-alert-title"
+          aria-describedby="red-alert-desc"
+          hidden
+        >
+          <div class="red-alert-inner">
+            <div class="red-alert-content">
+              <div class="red-alert-kicker">
+                <span class="red-alert-beacon" aria-hidden="true"></span>
+                <span id="red-alert-title">Modo Alerta Vermelho · Ameaça de Alta Severidade Contida</span>
+              </div>
+              <div class="red-alert-meta">
+                <span>Origem: <strong id="red-alert-origin" class="mono">-</strong></span>
+                <span aria-hidden="true">·</span>
+                <span>Ataque: <strong id="red-alert-type">-</strong></span>
+                <span aria-hidden="true">·</span>
+                <span>Horário: <strong id="red-alert-time" class="mono tabular-nums">-</strong></span>
+              </div>
+              <p id="red-alert-desc" class="red-alert-desc">-</p>
+            </div>
+
+            <div class="red-alert-actions">
+              <button id="red-alert-inspect-btn" type="button" class="btn btn-secondary btn-sm">
+                Ver em Radar &amp; Logs
+              </button>
+              <button id="ack-red-alert-btn" type="button" class="btn btn-danger">
+                Reconhecer e Silenciar Alerta
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <main class="content-viewport">
+          <!-- TELA 1: ESCUDO GLOBAL -->
+          <section id="screen-shield" class="screen is-active" aria-labelledby="shield-heading">
+            <aside
+              id="pwa-install-card"
+              class="surface-panel pwa-install-card"
+              aria-labelledby="pwa-install-heading"
+            >
+              <div class="pwa-install-main">
+                <div class="pwa-install-icon" aria-hidden="true">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="6" y="2" width="12" height="20" rx="2.5" />
+                    <path d="M12 18h.01" />
+                    <path d="M12 7v5" />
+                    <path d="m9.5 9.5 2.5 2.5 2.5-2.5" />
+                  </svg>
+                </div>
+                <div class="pwa-install-copy">
+                  <h2 id="pwa-install-heading" class="pwa-install-title">
+                    Instalar AEGIS AI no Smartphone
+                  </h2>
+                  <p class="pwa-install-subtitle">
+                    Execute em tela cheia no Android com acesso offline, banco IndexedDB local e atualizações automáticas via GitHub Pages.
+                  </p>
+                  <div id="pwa-manual-guide" class="pwa-manual-guide">
+                    <span class="pwa-guide-step">
+                      <strong>1.</strong> Toque nos 3 pontinhos <strong>⋮</strong> do Chrome
+                    </span>
+                    <span class="meta-sep" aria-hidden="true">|</span>
+                    <span class="pwa-guide-step">
+                      <strong>2.</strong> Selecione <strong>'Instalar aplicativo'</strong> ou <strong>'Adicionar à tela inicial'</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pwa-install-actions">
+                <button id="pwa-install-btn" type="button" class="btn btn-primary">
+                  Instalar Aplicativo Agora
+                </button>
+                <button id="pwa-install-dismiss-btn" type="button" class="btn btn-ghost btn-sm">
+                  Ocultar
+                </button>
+              </div>
+            </aside>
+
+            <section
+              id="risk-score-panel"
+              class="surface-panel risk-score-panel is-safe"
+              aria-labelledby="risk-score-heading"
+            >
+              <div class="risk-gauge-column">
+                <div class="risk-gauge-wrap">
+                  <svg
+                    class="risk-gauge-svg"
+                    viewBox="0 0 220 126"
+                    role="img"
+                    aria-labelledby="risk-score-heading"
+                  >
+                    <!-- Concentric 4-band reference ring (0-24, 25-54, 55-79, 80-100) -->
+                    <path
+                      d="M 15 108 A 95 95 0 0 1 205 108"
+                      fill="none"
+                      stroke="rgba(34, 211, 238, 0.35)"
+                      stroke-width="2.5"
+                      stroke-dasharray="70 298.45"
+                      stroke-dashoffset="0"
+                    />
+                    <path
+                      d="M 15 108 A 95 95 0 0 1 205 108"
+                      fill="none"
+                      stroke="rgba(251, 191, 36, 0.35)"
+                      stroke-width="2.5"
+                      stroke-dasharray="88 298.45"
+                      stroke-dashoffset="-74.6"
+                    />
+                    <path
+                      d="M 15 108 A 95 95 0 0 1 205 108"
+                      fill="none"
+                      stroke="rgba(251, 146, 60, 0.35)"
+                      stroke-width="2.5"
+                      stroke-dasharray="73 298.45"
+                      stroke-dashoffset="-164.1"
+                    />
+                    <path
+                      d="M 15 108 A 95 95 0 0 1 205 108"
+                      fill="none"
+                      stroke="rgba(239, 68, 68, 0.45)"
+                      stroke-width="2.5"
+                      stroke-dasharray="60 298.45"
+                      stroke-dashoffset="-238.8"
+                    />
+                    <!-- Main track -->
+                    <path
+                      d="M 26 108 A 84 84 0 0 1 194 108"
+                      fill="none"
+                      stroke="rgba(148, 163, 184, 0.14)"
+                      stroke-width="12"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      id="risk-gauge-progress"
+                      d="M 26 108 A 84 84 0 0 1 194 108"
+                      fill="none"
+                      stroke="#22d3ee"
+                      stroke-width="12"
+                      stroke-linecap="round"
+                      stroke-dasharray="263.89"
+                      stroke-dashoffset="263.89"
+                    />
+                    <circle
+                      id="risk-gauge-dot"
+                      cx="26"
+                      cy="108"
+                      r="5.5"
+                      fill="#22d3ee"
+                      stroke="#080c14"
+                      stroke-width="2"
+                    />
+                  </svg>
+
+                  <div class="risk-gauge-readout">
+                    <span id="risk-score-value" class="risk-score-number mono tabular-nums">0</span>
+                    <span class="risk-score-scale mono">/ 100</span>
+                  </div>
+                </div>
+                <div class="risk-scale-ticks mono tabular-nums" aria-hidden="true">
+                  <span>0</span>
+                  <span>25</span>
+                  <span>55</span>
+                  <span>80</span>
+                  <span>100</span>
+                </div>
+              </div>
+
+              <div class="risk-details-column">
+                <div class="risk-header-row">
+                  <div>
+                    <h2 id="risk-score-heading" class="panel-title">Score de Risco de Rede</h2>
+                    <p class="panel-subtitle">
+                      Cálculo dinâmico via IndexedDB · janela de 15 min com decaimento temporal
+                    </p>
+                  </div>
+                  <div id="risk-band-badge" class="risk-band-badge is-safe">
+                    <span class="risk-band-dot" aria-hidden="true"></span>
+                    <span id="risk-band-label">SEGURO</span>
+                  </div>
+                </div>
+
+                <p id="risk-score-summary" class="risk-summary-line">
+                  Nenhuma anomalia ativa detectada · perímetro de rede estável.
+                </p>
+
+                <div class="risk-tactical-bar" aria-label="Faixas de severidade do risco de rede">
+                  <div class="risk-band-segment seg-safe" data-band-seg="safe">
+                    <span class="seg-range mono tabular-nums">0–24</span>
+                    <span class="seg-name">SEGURO</span>
+                  </div>
+                  <div class="risk-band-segment seg-attention" data-band-seg="attention">
+                    <span class="seg-range mono tabular-nums">25–54</span>
+                    <span class="seg-name">ATENÇÃO</span>
+                  </div>
+                  <div class="risk-band-segment seg-elevated" data-band-seg="elevated">
+                    <span class="seg-range mono tabular-nums">55–79</span>
+                    <span class="seg-name">AMEAÇA ELEVADA</span>
+                  </div>
+                  <div class="risk-band-segment seg-critical" data-band-seg="critical">
+                    <span class="seg-range mono tabular-nums">80–100</span>
+                    <span class="seg-name">INVASÃO CRÍTICA</span>
+                  </div>
+                </div>
+
+                <div class="risk-weights-meta mono tabular-nums">
+                  <span id="risk-factor-dns">DNS / Exfil (+35): 0</span>
+                  <span class="meta-sep" aria-hidden="true">·</span>
+                  <span id="risk-factor-ai">Supply / IA (+20): 0</span>
+                  <span class="meta-sep" aria-hidden="true">·</span>
+                  <span id="risk-factor-burst">Rajada / Polling (+10): 0</span>
+                  <span class="meta-sep" aria-hidden="true">·</span>
+                  <span id="risk-factor-vpn">VPN (+25 se pausada): Ativa</span>
+                </div>
+              </div>
+            </section>
+
+            <div class="hero-split">
+              <div class="surface-panel hero-control-panel">
+                <div class="status-row">
+                  <span id="vpn-status-indicator" class="status-indicator is-active">
+                    <span class="status-glyph" aria-hidden="true"></span>
+                    <span id="vpn-status-text">Vigilância VPN Ativa</span>
+                  </span>
+                  <span class="meta-sep" aria-hidden="true">·</span>
+                  <span id="threat-level-text" class="threat-status is-guarded">
+                    Ameaça de Rede: Baixa / Contida
+                  </span>
+                </div>
+
+                <h1 id="shield-heading" class="hero-title">
+                  Escudo Global contra Invasões de IA e Bots
+                </h1>
+                <p class="hero-subtitle">
+                  Vigilante local de navegador e DNS contra scrapers automatizados de IA, enxames de bots maliciosos, scripts de terceiros e rastreadores comportamentais A/B.
+                </p>
+
+                <div class="hero-cta-group">
+                  <button id="hero-vpn-toggle-btn" type="button" class="btn btn-primary btn-lg">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                    <span id="hero-vpn-toggle-label">Pausar Vigilância VPN Local</span>
+                  </button>
+                  <button id="hero-simulate-burst-btn" type="button" class="btn btn-secondary btn-lg">
+                    Testar Varredura de IA
+                  </button>
+                </div>
+
+                <div class="hero-meta-footer">
+                  <span>DNS Seguro: <strong id="hero-dns-label" class="mono">1.1.1.2 (DoH)</strong></span>
+                  <span aria-hidden="true">·</span>
+                  <span>Regras de defesa ativas: <strong id="hero-rules-count" class="tabular-nums">0</strong></span>
+                </div>
+              </div>
+
+              <div class="surface-panel radar-panel">
+                <div class="panel-header">
+                  <div>
+                    <h2 class="panel-title">Radar Heurístico Global</h2>
+                    <p class="panel-subtitle">Interceptação de bots, IA e rastreadores</p>
+                  </div>
+                  <div class="radar-legend">
+                    <span class="legend-item legend-blocked">Barrado</span>
+                    <span aria-hidden="true">·</span>
+                    <span class="legend-item legend-allowed">Seguro</span>
+                    <span aria-hidden="true">·</span>
+                    <span class="legend-item legend-anomaly">Rajada</span>
+                  </div>
+                </div>
+
+                <div class="radar-stage">
+                  <canvas
+                    id="radar-canvas"
+                    width="340"
+                    height="340"
+                    aria-label="Radar heurístico de requisições interceptadas"
+                  ></canvas>
+                  <div id="radar-last-event" class="radar-caption">
+                    <span class="mono">Aguardando próxima varredura...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="kpi-strip" aria-label="Contadores de defesa em tempo real">
+              <article class="surface-panel kpi-card">
+                <span class="kpi-label">Scripts de IA Barrados</span>
+                <strong id="kpi-ai-blocked" class="kpi-value tabular-nums">0</strong>
+                <div id="kpi-ai-breakdown" class="kpi-meta">
+                  0 bots/IA · 0 rastreadores e A/B
+                </div>
+              </article>
+
+              <article class="surface-panel kpi-card">
+                <span class="kpi-label">Rajadas Anômalas Bloqueadas</span>
+                <strong id="kpi-bursts-blocked" class="kpi-value tabular-nums">0</strong>
+                <div id="kpi-bursts-meta" class="kpi-meta">0 alertas heurísticos pendentes</div>
+              </article>
+
+              <article class="surface-panel kpi-card">
+                <span class="kpi-label">Integridade DNS</span>
+                <strong id="kpi-dns-integrity" class="kpi-value tabular-nums">100%</strong>
+                <div id="kpi-dns-meta" class="kpi-meta">Resolução cifrada sem vazamentos</div>
+              </article>
+
+              <article class="surface-panel kpi-card">
+                <span class="kpi-label">Tráfego Seguro Permitido</span>
+                <strong id="kpi-allowed-today" class="kpi-value tabular-nums">0</strong>
+                <div id="kpi-total-evaluated" class="kpi-meta">0 eventos inspecionados</div>
+              </article>
+            </div>
+
+            <section class="surface-panel telemetry-panel" aria-labelledby="telemetry-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="telemetry-heading" class="panel-title">Telemetria em Tempo Real</h2>
+                  <p class="panel-subtitle">
+                    Comparativo dinâmico nos últimos 30 ciclos (15s por ciclo) sincronizado com o IndexedDB
+                  </p>
+                </div>
+                <div class="telemetry-controls">
+                  <span id="telemetry-hover-readout" class="meta-text mono tabular-nums">
+                    Passe o cursor sobre o gráfico para inspecionar
+                  </span>
+                  <button id="clear-telemetry-chart-btn" type="button" class="btn btn-ghost btn-sm">
+                    Limpar Histórico do Gráfico
+                  </button>
+                </div>
+              </div>
+
+              <div class="telemetry-legend-bar">
+                <div class="telemetry-legend-item">
+                  <span class="telemetry-swatch swatch-normal" aria-hidden="true"></span>
+                  <span>Requisições Normais</span>
+                  <strong id="telemetry-total-normal" class="mono tabular-nums">0</strong>
+                </div>
+                <span class="meta-sep" aria-hidden="true">·</span>
+                <div class="telemetry-legend-item">
+                  <span class="telemetry-swatch swatch-blocked" aria-hidden="true"></span>
+                  <span>Tentativas de Invasão de IA Bloqueadas</span>
+                  <strong id="telemetry-total-blocked" class="mono tabular-nums">0</strong>
+                </div>
+              </div>
+
+              <div class="telemetry-canvas-wrap">
+                <canvas
+                  id="telemetry-canvas"
+                  aria-label="Gráfico comparativo entre requisições normais e tentativas de invasão de IA bloqueadas"
+                ></canvas>
+              </div>
+            </section>
+
+            <div class="two-col-grid">
+              <section class="surface-panel" aria-labelledby="network-status-heading">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="network-status-heading" class="panel-title">Perímetro de Rede &amp; DNS</h2>
+                    <p class="panel-subtitle">Telemetria local da vigilância VPN</p>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-sm" data-goto-screen="rules">
+                    Ajustar Defesa
+                  </button>
+                </div>
+
+                <dl class="spec-list">
+                  <div class="spec-row">
+                    <dt>Estado da Vigilância VPN</dt>
+                    <dd id="net-tunnel-state" class="mono">Ativa · Escudo global operando</dd>
+                  </div>
+                  <div class="spec-row">
+                    <dt>Nível de Ameaça Atual</dt>
+                    <dd id="net-threat-level" class="mono">Baixo · Sem invasões ativas</dd>
+                  </div>
+                  <div class="spec-row">
+                    <dt>Provedor DNS Seguro</dt>
+                    <dd id="net-dns-provider" class="mono">Cloudflare Security</dd>
+                  </div>
+                  <div class="spec-row">
+                    <dt>Endpoint &amp; Protocolo</dt>
+                    <dd id="net-dns-endpoint" class="mono tabular-nums">1.1.1.2 · DoH</dd>
+                  </div>
+                  <div class="spec-row">
+                    <dt>Limiar Heurístico de Rajada</dt>
+                    <dd id="net-burst-threshold" class="mono tabular-nums">6 req / 10s</dd>
+                  </div>
+                  <div class="spec-row">
+                    <dt>Persistência Nativa</dt>
+                    <dd id="net-storage-backend" class="mono">IndexedDB (AegisAI_Vigilante_DB)</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section class="surface-panel" aria-labelledby="recent-events-heading">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="recent-events-heading" class="panel-title">Últimas Ameaças &amp; Scripts</h2>
+                    <p class="panel-subtitle">Histórico recente persistido no navegador</p>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-sm" data-goto-screen="logs">
+                    Abrir Radar &amp; Logs
+                  </button>
+                </div>
+
+                <div id="recent-events-container" class="table-wrap">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Horário</th>
+                        <th>Domínio</th>
+                        <th>Severidade</th>
+                        <th class="text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody id="recent-events-tbody"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- TELA 2: RADAR & LOGS -->
+          <section id="screen-logs" class="screen" aria-labelledby="logs-heading" hidden>
+            <div class="screen-intro">
+              <div>
+                <h1 id="logs-heading" class="screen-title">Radar &amp; Logs de Ameaças</h1>
+                <p class="screen-subtitle">
+                  Analise alertas heurísticos, filtre ameaças por severidade no histórico persistente do IndexedDB e libere ou bloqueie domínios imediatamente.
+                </p>
+              </div>
+              <div class="screen-actions">
+                <button id="logs-test-refresh-btn" type="button" class="btn btn-secondary">
+                  Simular Invasão de IA
+                </button>
+                <button id="logs-clear-btn" type="button" class="btn btn-ghost">
+                  Limpar Histórico
+                </button>
+              </div>
+            </div>
+
+            <section class="surface-panel" aria-labelledby="alerts-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="alerts-heading" class="panel-title">
+                    Alertas Heurísticos (Rajadas, Refresh Suspeito &amp; Bots de IA)
+                  </h2>
+                  <p class="panel-subtitle">
+                    Detecção comportamental em janela deslizante para conter varreduras automatizadas
+                  </p>
+                </div>
+                <button id="resolve-all-alerts-btn" type="button" class="btn btn-ghost btn-sm">
+                  Resolver Pendentes
+                </button>
+              </div>
+
+              <div id="alerts-list" class="alerts-list"></div>
+            </section>
+
+            <section class="surface-panel" aria-labelledby="events-table-heading">
+              <div class="toolbar">
+                <div class="toolbar-left">
+                  <h2 id="events-table-heading" class="panel-title">Histórico Persistente de Ameaças</h2>
+                  <span id="logs-count-label" class="meta-text tabular-nums">0 registros</span>
+                </div>
+
+                <div class="toolbar-controls">
+                  <div class="search-field">
+                    <label for="logs-search-input" class="sr-only">Buscar domínio nos logs</label>
+                    <input
+                      id="logs-search-input"
+                      type="search"
+                      class="input"
+                      placeholder="Buscar domínio ou assinatura..."
+                    />
+                  </div>
+
+                  <div class="select-field">
+                    <label for="logs-severity-select" class="sr-only">Filtrar por severidade</label>
+                    <select id="logs-severity-select" class="select">
+                      <option value="all">Todas severidades</option>
+                      <option value="critical">Crítica</option>
+                      <option value="high">Alta</option>
+                      <option value="medium">Média</option>
+                      <option value="low">Baixa / Info</option>
+                    </select>
+                  </div>
+
+                  <div class="segmented-control" role="group" aria-label="Filtrar por decisão">
+                    <button type="button" class="seg-btn is-active" data-log-action="all">Todos</button>
+                    <button type="button" class="seg-btn" data-log-action="blocked">Barrados</button>
+                    <button type="button" class="seg-btn" data-log-action="allowed">Permitidos</button>
+                  </div>
+
+                  <div class="select-field">
+                    <label for="logs-category-select" class="sr-only">Filtrar por vetor</label>
+                    <select id="logs-category-select" class="select">
+                      <option value="all">Todos vetores</option>
+                      <option value="ai_crawler">Bot / Scraper de IA</option>
+                      <option value="ab_testing">A/B Testing</option>
+                      <option value="tracker">Rastreador</option>
+                      <option value="third_party">Script de Terceiros</option>
+                      <option value="media_leak">Sensores / WebRTC Leak</option>
+                      <option value="anomaly">Anomalia / Rajada</option>
+                      <option value="essential">Essencial / Allowlist</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Horário</th>
+                      <th>Domínio &amp; Recurso</th>
+                      <th>Severidade</th>
+                      <th>Vetor</th>
+                      <th>Decisão</th>
+                      <th>Motivo</th>
+                      <th class="text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logs-tbody"></tbody>
+                </table>
+              </div>
+              <div id="logs-empty-state" class="empty-state" hidden>
+                <p class="empty-title">Nenhum evento encontrado para os filtros selecionados.</p>
+                <p class="empty-desc">
+                  Altere o filtro de severidade ou simule uma varredura para registrar novos eventos no IndexedDB.
+                </p>
+                <button id="logs-reset-filters-btn" type="button" class="btn btn-secondary">
+                  Limpar Filtros
+                </button>
+              </div>
+            </section>
+          </section>
+
+          <!-- TELA 3: REGRAS & DEFESA -->
+          <section id="screen-rules" class="screen" aria-labelledby="rules-heading" hidden>
+            <div class="screen-intro">
+              <div>
+                <h1 id="rules-heading" class="screen-title">Regras &amp; Defesa de Rede</h1>
+                <p class="screen-subtitle">
+                  Configure o DNS seguro, gerencie listas de bloqueio e allowlist, execute simulações de ataque e exporte ou importe políticas em JSON.
+                </p>
+              </div>
+            </div>
+
+            <div class="two-col-grid">
+              <!-- DNS Seguro e Heurística -->
+              <section class="surface-panel" aria-labelledby="dns-config-heading">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="dns-config-heading" class="panel-title">DNS Seguro &amp; Proteção Heurística</h2>
+                    <p class="panel-subtitle">Resolução cifrada e limiares anti-invasão</p>
+                  </div>
+                </div>
+
+                <form id="network-config-form" class="form-stack">
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="dns-preset-select" class="field-label">Provedor DNS Seguro</label>
+                      <select id="dns-preset-select" class="select">
+                        <option value="cloudflare-sec">Cloudflare Security (1.1.1.2)</option>
+                        <option value="quad9">Quad9 Threat Blocking (9.9.9.9)</option>
+                        <option value="adguard">AdGuard DNS (94.140.14.14)</option>
+                        <option value="mullvad">Mullvad DNS (194.242.2.2)</option>
+                        <option value="custom">Personalizado</option>
+                      </select>
+                    </div>
+
+                    <div class="field">
+                      <label for="dns-protocol-select" class="field-label">Protocolo</label>
+                      <select id="dns-protocol-select" class="select">
+                        <option value="DoH">DoH (DNS over HTTPS)</option>
+                        <option value="DoT">DoT (DNS over TLS)</option>
+                        <option value="DNSCrypt">DNSCrypt Local</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="dns-ip-input" class="field-label">Endpoint / IP Upstream</label>
+                      <input
+                        id="dns-ip-input"
+                        type="text"
+                        class="input mono"
+                        placeholder="1.1.1.2"
+                        required
+                      />
+                    </div>
+
+                    <div class="field">
+                      <label for="burst-threshold-input" class="field-label">
+                        Limite de Rajada (req / 10s)
+                      </label>
+                      <input
+                        id="burst-threshold-input"
+                        type="number"
+                        min="3"
+                        max="50"
+                        class="input mono tabular-nums"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <label class="checkbox-row">
+                    <input id="autoblock-bots-checkbox" type="checkbox" />
+                    <span>Conter e bloquear automaticamente bots de IA ou domínios em rajada</span>
+                  </label>
+
+                  <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Salvar Configuração de Defesa</button>
+                  </div>
+                </form>
+              </section>
+
+              <!-- Simulador de Invasão de IA -->
+              <section class="surface-panel" aria-labelledby="simulator-heading">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="simulator-heading" class="panel-title">Simulador de Invasão de IA</h2>
+                    <p class="panel-subtitle">
+                      Execute 4 testes práticos que gravam logs reais no IndexedDB e disparam alertas visuais
+                    </p>
+                  </div>
+                </div>
+
+                <div class="sim-scenarios-list">
+                  <div class="sim-scenario-row">
+                    <div class="sim-scenario-copy">
+                      <strong class="sim-scenario-title">1. Ataque Supply Chain (Script A/B Comprometido)</strong>
+                      <span class="meta-text">
+                        Testa o bloqueio de script A/B externo tentando ler campos de formulário.
+                      </span>
+                    </div>
+                    <button id="sim-supply-chain-btn" type="button" class="btn btn-secondary">
+                      Simular Ataque Supply Chain (Script A/B Comprometido)
+                    </button>
+                  </div>
+
+                  <div class="sim-scenario-row">
+                    <div class="sim-scenario-copy">
+                      <strong class="sim-scenario-title">2. Rajada de Bot/IA (Polling 60s)</strong>
+                      <span class="meta-text">
+                        Dispara múltiplas requisições repetitivas para acionar o detector heurístico.
+                      </span>
+                    </div>
+                    <button id="sim-polling-burst-btn" type="button" class="btn btn-secondary">
+                      Simular Rajada de Bot/IA (Polling 60s)
+                    </button>
+                  </div>
+
+                  <div class="sim-scenario-row">
+                    <div class="sim-scenario-copy">
+                      <strong class="sim-scenario-title">3. Sequestro de DNS na Rede Wi-Fi</strong>
+                      <span class="meta-text">
+                        Testa o alerta de integridade da rede local contra desvio de resolvedor.
+                      </span>
+                    </div>
+                    <button id="sim-dns-hijack-btn" type="button" class="btn btn-secondary">
+                      Simular Sequestro de DNS na Rede Wi-Fi
+                    </button>
+                  </div>
+
+                  <div class="sim-scenario-row">
+                    <div class="sim-scenario-copy">
+                      <strong class="sim-scenario-title">4. Captura Oculta de Microfone/Câmera (WebRTC Leak)</strong>
+                      <span class="meta-text">
+                        Testa bloqueio de servidor STUN/TURN não autorizado e upload contínuo de áudio/vídeo.
+                      </span>
+                    </div>
+                    <button id="sim-webrtc-leak-btn" type="button" class="btn btn-danger">
+                      Simular Captura Oculta de Microfone/Câmera (WebRTC Leak)
+                    </button>
+                  </div>
+                </div>
+
+                <div id="sim-visual-alert" class="sim-visual-alert" role="alert" hidden></div>
+
+                <form id="manual-probe-form" class="probe-form">
+                  <label for="manual-probe-input" class="field-label">
+                    Inspecionar Domínio ou Script Manualmente
+                  </label>
+                  <div class="inline-input-group">
+                    <input
+                      id="manual-probe-input"
+                      type="text"
+                      class="input mono"
+                      placeholder="ex: crawler.ia-scraper.test/v1/extract.js"
+                      required
+                    />
+                    <button type="submit" class="btn btn-primary">Inspecionar</button>
+                  </div>
+                </form>
+
+                <div id="probe-result-box" class="probe-result" hidden></div>
+              </section>
+            </div>
+
+            <!-- Sentinela de Sensores (Câmera & Microfone) -->
+            <section
+              class="surface-panel sensor-sentinel-panel"
+              aria-labelledby="sensor-sentinel-heading"
+            >
+              <div class="panel-header">
+                <div>
+                  <h2 id="sensor-sentinel-heading" class="panel-title">
+                    Sentinela de Sensores (Câmera &amp; Microfone)
+                  </h2>
+                  <p class="panel-subtitle">
+                    Detector de vazamento WebRTC / STUN / upload oculto integrado ao IndexedDB e ao Score de Risco
+                  </p>
+                </div>
+                <div class="sensor-header-meta">
+                  <span id="sensor-blocks-badge" class="meta-text mono tabular-nums">
+                    0 bloqueios WebRTC/mídia
+                  </span>
+                </div>
+              </div>
+
+              <div class="sensor-sentinel-grid">
+                <div class="sensor-subcard">
+                  <div class="sensor-subcard-header">
+                    <div>
+                      <h3 class="sig-group-title">Detector de Vazamento de Mídia</h3>
+                      <p class="sig-group-sub">
+                        Monitora servidores STUN/TURN não autorizados e fluxos contínuos de upload em segundo plano
+                      </p>
+                    </div>
+                    <span id="sensor-sig-status" class="decision-label is-allowed">
+                      2/2 ativas
+                    </span>
+                  </div>
+
+                  <div id="sensor-signatures-list" class="sig-list"></div>
+
+                  <div class="sensor-rules-callout">
+                    <span class="meta-text">
+                      Relays bloqueados pré-carregados:
+                      <strong class="mono">stun-relay.bot-media.test</strong>,
+                      <strong class="mono">turn-stream.ai-capture.test</strong>
+                    </span>
+                    <button id="sensor-quick-test-btn" type="button" class="btn btn-secondary btn-sm">
+                      Testar Captura Oculta (WebRTC Leak)
+                    </button>
+                  </div>
+                </div>
+
+                <div class="sensor-subcard">
+                  <div class="sensor-subcard-header">
+                    <div>
+                      <h3 class="sig-group-title">Guia Rápido de Blindagem no Aparelho</h3>
+                      <p class="sig-group-sub">
+                        Checklist interativo persistido no IndexedDB para proteger câmera e microfone no sistema
+                      </p>
+                    </div>
+                    <span id="sensor-checklist-progress" class="meta-text mono tabular-nums">
+                      0/4 verificados
+                    </span>
+                  </div>
+
+                  <div id="sensor-checklist-list" class="sensor-checklist-list"></div>
+
+                  <div class="sensor-checklist-footer">
+                    <span id="sensor-checklist-hint" class="meta-text">
+                      Marque os passos concluídos no aparelho.
+                    </span>
+                    <button id="sensor-checklist-reset-btn" type="button" class="btn btn-ghost btn-sm">
+                      Reiniciar Checklist
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Pacote de Assinaturas de Defesa (Seed IndexedDB) -->
+            <section class="surface-panel" aria-labelledby="signatures-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="signatures-heading" class="panel-title">
+                    Assinaturas de Defesa Pré-Carregadas
+                  </h2>
+                  <p class="panel-subtitle">
+                    Pacote inicial persistido automaticamente no IndexedDB em 4 categorias com controle individual
+                  </p>
+                </div>
+                <span id="signatures-summary-text" class="meta-text tabular-nums">11/11 assinaturas ativas</span>
+              </div>
+
+              <div id="signatures-grid" class="signatures-grid"></div>
+            </section>
+
+            <!-- Gerenciamento de Listas -->
+            <section class="surface-panel" aria-labelledby="rules-manager-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="rules-manager-heading" class="panel-title">
+                    Listas de Bloqueio &amp; Allowlist
+                  </h2>
+                  <p class="panel-subtitle">
+                    Regras de Allowlist possuem precedência absoluta sobre qualquer bloqueio
+                  </p>
+                </div>
+                <span id="rules-summary-text" class="meta-text tabular-nums">0 bloqueados · 0 permitidos</span>
+              </div>
+
+              <form id="add-rule-form" class="add-rule-bar">
+                <div class="field grow">
+                  <label for="new-rule-domain" class="sr-only">Domínio</label>
+                  <input
+                    id="new-rule-domain"
+                    type="text"
+                    class="input mono"
+                    placeholder="Domínio (ex: scraper.ia-bot.net)"
+                    required
+                  />
+                </div>
+
+                <div class="field">
+                  <label for="new-rule-type" class="sr-only">Ação da regra</label>
+                  <select id="new-rule-type" class="select">
+                    <option value="block">Bloquear</option>
+                    <option value="allow">Permitir (Allowlist)</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="new-rule-category" class="sr-only">Categoria</label>
+                  <select id="new-rule-category" class="select">
+                    <option value="ai_crawler">Bot / Scraper de IA</option>
+                    <option value="ab_testing">A/B Testing</option>
+                    <option value="tracker">Rastreador</option>
+                    <option value="third_party">Script de Terceiros</option>
+                    <option value="media_leak">Sensores / WebRTC Leak</option>
+                    <option value="manual">Regra Manual</option>
+                  </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Adicionar Regra</button>
+              </form>
+
+              <div class="toolbar compact">
+                <div class="segmented-control" role="group" aria-label="Filtrar regras por tipo">
+                  <button type="button" class="seg-btn is-active" data-rule-filter="all">Todas</button>
+                  <button type="button" class="seg-btn" data-rule-filter="block">Bloqueados</button>
+                  <button type="button" class="seg-btn" data-rule-filter="allow">Allowlist</button>
+                </div>
+
+                <div class="search-field">
+                  <label for="rules-search-input" class="sr-only">Filtrar regras</label>
+                  <input
+                    id="rules-search-input"
+                    type="search"
+                    class="input"
+                    placeholder="Filtrar domínios..."
+                  />
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Domínio</th>
+                      <th>Vetor</th>
+                      <th>Lista</th>
+                      <th class="text-right">Hits</th>
+                      <th>Estado</th>
+                      <th class="text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rules-tbody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <!-- Exportação e Importação JSON -->
+            <section class="surface-panel" aria-labelledby="json-io-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="json-io-heading" class="panel-title">Exportar &amp; Importar Políticas (JSON)</h2>
+                  <p class="panel-subtitle">
+                    Exporte ou restaure sua lista de bloqueio, allowlist e configuração de DNS seguro em JSON
+                  </p>
+                </div>
+                <div class="json-header-actions">
+                  <button id="export-json-btn" type="button" class="btn btn-primary">
+                    Exportar JSON
+                  </button>
+                  <button id="copy-json-btn" type="button" class="btn btn-secondary">
+                    Copiar JSON
+                  </button>
+                  <button id="reset-defaults-btn" type="button" class="btn btn-ghost">
+                    Restaurar Padrões
+                  </button>
+                </div>
+              </div>
+
+              <div class="json-import-box">
+                <div class="json-file-row">
+                  <label for="import-json-file" class="btn btn-secondary file-label">
+                    Selecionar Arquivo .json
+                  </label>
+                  <input id="import-json-file" type="file" accept="application/json,.json" hidden />
+
+                  <div class="segmented-control" role="group" aria-label="Modo de importação">
+                    <button type="button" class="seg-btn is-active" data-import-mode="merge">
+                      Mesclar Listas
+                    </button>
+                    <button type="button" class="seg-btn" data-import-mode="replace">
+                      Substituir Tudo
+                    </button>
+                  </div>
+                </div>
+
+                <label for="import-json-textarea" class="field-label">
+                  Ou cole o JSON abaixo para importar
+                </label>
+                <textarea
+                  id="import-json-textarea"
+                  class="textarea mono"
+                  rows="5"
+                  placeholder='{"app":"AEGIS AI","version":1,"rules":[...],"settings":{...}}'
+                ></textarea>
+
+                <div class="form-actions">
+                  <button id="import-json-apply-btn" type="button" class="btn btn-primary">
+                    Importar Políticas do Texto
+                  </button>
+                </div>
+              </div>
+            </section>
+          </section>
+        </main>
+
+        <footer class="app-footer" role="contentinfo">
+          <span>AEGIS AI • Vigilante de Rede | Desenvolvido por Hevert Pereira</span>
+          <span class="meta-sep" aria-hidden="true">·</span>
+          <span id="app-build-version" class="mono tabular-nums footer-build">Build v2.4.0</span>
+        </footer>
+      </div>
+    </div>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

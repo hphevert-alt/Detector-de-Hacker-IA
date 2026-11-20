@@ -1,0 +1,34 @@
+{
+  "id": "./",
+  "name": "AEGIS AI — Vigilante contra Invasões de IA",
+  "short_name": "AEGIS AI",
+  "description": "Escudo protetor local contra invasões automatizadas de IA, bots maliciosos, vazamento WebRTC e scripts suspeitos com persistência no IndexedDB.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#080c14",
+  "background_color": "#080c14",
+  "lang": "pt-BR",
+  "categories": ["security", "utilities"],
+  "icons": [
+    {
+      "src": "./pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

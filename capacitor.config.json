@@ -1,0 +1,11 @@
+{
+  "appId": "com.hevertpereira.aegisai",
+  "appName": "AEGIS AI",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#080c14"
+  }
+}

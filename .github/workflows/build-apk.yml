@@ -1,0 +1,60 @@
+name: Gerar APK Android (AEGIS AI)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-android-apk:
+    name: Compilar APK Instalável
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Configurar Java 21 (Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Instalar dependências e gerar build web
+        run: |
+          npm install
+          npm run build
+
+      - name: Configurar projeto Android com Capacitor
+        run: |
+          npm install --no-save @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npx cap add android
+          for dir in android/app/src/main/res/mipmap-*; do
+            if [ -d "$dir" ]; then
+              cp public/pwa-192x192.png "$dir/ic_launcher.png"
+              cp public/pwa-192x192.png "$dir/ic_launcher_round.png"
+              cp public/pwa-512x512.png "$dir/ic_launcher_foreground.png" || true
+            fi
+          done
+          npx cap sync android
+
+      - name: Compilar APK Debug instalável
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Publicar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEGIS-AI-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
