@@ -20,7 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Configurar Java 21 (Android Gradle)
         uses: actions/setup-java@v4
@@ -28,20 +27,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Configurar Android SDK e aceitar licenças
+        uses: android-actions/setup-android@v3
+
       - name: Instalar dependências e gerar build web
         run: |
-          npm install
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Configurar projeto Android com Capacitor
         run: |
-          npm install --no-save @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
           npx cap add android
-          for dir in android/app/src/main/res/mipmap-*; do
+          for dir in android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi; do
             if [ -d "$dir" ]; then
-              cp public/pwa-192x192.png "$dir/ic_launcher.png"
-              cp public/pwa-192x192.png "$dir/ic_launcher_round.png"
-              cp public/pwa-512x512.png "$dir/ic_launcher_foreground.png" || true
+              [ -f "$dir/ic_launcher.png" ] && cp public/pwa-192x192.png "$dir/ic_launcher.png"
+              [ -f "$dir/ic_launcher_round.png" ] && cp public/pwa-192x192.png "$dir/ic_launcher_round.png"
+              [ -f "$dir/ic_launcher_foreground.png" ] && cp public/pwa-512x512.png "$dir/ic_launcher_foreground.png"
             fi
           done
           npx cap sync android
