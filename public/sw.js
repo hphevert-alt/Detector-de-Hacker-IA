@@ -58,8 +58,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Never intercept service worker script requests from cache
-  if (url.pathname.endsWith('/sw.js') || url.pathname === 'sw.js') return;
+  // Never intercept service worker script or APK installer binary downloads
+  if (
+    url.pathname.endsWith('/sw.js') ||
+    url.pathname === 'sw.js' ||
+    url.pathname.endsWith('.apk')
+  ) {
+    return;
+  }
 
   // Navigation requests (HTML shell): Network-First with offline fallback
   if (req.mode === 'navigate') {
