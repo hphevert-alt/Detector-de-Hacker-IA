@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AEGIS AI — Vigilante contra Invasões de IA</title>
     <meta
       name="description"
@@ -98,6 +98,25 @@
             </svg>
             <span>Regras &amp; Defesa</span>
           </button>
+
+          <button type="button" class="nav-item nav-item-pix" data-screen="support">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 21s-7-4.35-9.33-8.54C.72 8.95 2.75 4.5 6.84 4.5c2.16 0 3.96 1.15 5.16 2.84C13.2 5.65 15 4.5 17.16 4.5c4.09 0 6.12 4.45 4.17 7.96C19 16.65 12 21 12 21z" />
+            </svg>
+            <span>Doar via PIX</span>
+          </button>
+
+          <a
+            href="https://chat.whatsapp.com/G6q2VYw5h1BEWKx6VBJWHV?s=cl&p=a&iam=2"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="nav-item nav-item-whatsapp"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            </svg>
+            <span>Grupo WhatsApp</span>
+          </a>
         </nav>
 
         <div class="sidebar-footer">
@@ -146,9 +165,25 @@
             <button type="button" class="top-link" data-screen="rules">
               Regras &amp; Defesa
             </button>
+            <button type="button" class="top-link" data-screen="support">
+              Apoiar (PIX)
+            </button>
           </nav>
 
           <div class="topbar-actions">
+            <button
+              id="topbar-pix-btn"
+              type="button"
+              class="btn btn-pix btn-sm"
+              data-screen="support"
+              aria-label="Apoiar o desenvolvimento via PIX"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 21s-7-4.35-9.33-8.54C.72 8.95 2.75 4.5 6.84 4.5c2.16 0 3.96 1.15 5.16 2.84C13.2 5.65 15 4.5 17.16 4.5c4.09 0 6.12 4.45 4.17 7.96C19 16.65 12 21 12 21z" />
+              </svg>
+              <span class="pix-btn-full">Doar via PIX</span>
+              <span class="pix-btn-short">PIX</span>
+            </button>
             <button
               id="topbar-sound-btn"
               type="button"
@@ -322,6 +357,26 @@
                       stroke="#080c14"
                       stroke-width="2"
                     />
+                    <g id="risk-gauge-needle" style="transform: rotate(-90deg);">
+                      <line
+                        id="risk-gauge-needle-stem"
+                        x1="110"
+                        y1="44"
+                        x2="110"
+                        y2="23"
+                        stroke="#22d3ee"
+                        stroke-width="2.4"
+                        stroke-linecap="round"
+                      />
+                      <polygon
+                        id="risk-gauge-needle-tip"
+                        points="110,10 105,23 115,23"
+                        fill="#22d3ee"
+                        stroke="#080c14"
+                        stroke-width="1.4"
+                        stroke-linejoin="round"
+                      />
+                    </g>
                   </svg>
 
                   <div class="risk-gauge-readout">
@@ -343,7 +398,7 @@
                   <div>
                     <h2 id="risk-score-heading" class="panel-title">Score de Risco de Rede</h2>
                     <p class="panel-subtitle">
-                      Cálculo dinâmico via IndexedDB · janela de 15 min com decaimento temporal
+                      Cálculo dinâmico via IndexedDB · janela de 1 min com decaimento temporal
                     </p>
                   </div>
                   <div id="risk-band-badge" class="risk-band-badge is-safe">
@@ -382,7 +437,7 @@
                   <span class="meta-sep" aria-hidden="true">·</span>
                   <span id="risk-factor-burst">Rajada / Polling (+10): 0</span>
                   <span class="meta-sep" aria-hidden="true">·</span>
-                  <span id="risk-factor-vpn">VPN (+25 se pausada): Ativa</span>
+                  <span id="risk-factor-vpn">Monitoramento: Ativo</span>
                 </div>
               </div>
             </section>
@@ -418,6 +473,59 @@
                   <button id="hero-simulate-burst-btn" type="button" class="btn btn-secondary btn-lg">
                     Testar Varredura de IA
                   </button>
+                </div>
+
+                <div class="bg-mode-box" aria-live="polite">
+                  <div class="bg-mode-header">
+                    <div class="bg-mode-copy">
+                      <div class="bg-mode-title-row">
+                        <span class="bg-mode-title">Modo Oculto (Segundo Plano)</span>
+                        <span id="bg-mode-badge" class="bg-mode-badge is-active">
+                          Ativo em 2º plano
+                        </span>
+                      </div>
+                      <p id="bg-mode-desc" class="bg-mode-desc">
+                        Permanece monitorando continuamente em segundo plano (com WakeLock e auto-reinício no Android) enquanto você usa outros apps, até você abrir e pausar.
+                      </p>
+                    </div>
+                    <label class="switch">
+                      <input
+                        id="toggle-background-mode"
+                        type="checkbox"
+                        checked
+                        aria-label="Ativar ou desativar monitoramento oculto em segundo plano"
+                      />
+                      <span class="switch-track"></span>
+                    </label>
+                  </div>
+                  <div class="bg-mode-actions">
+                    <button id="bg-hide-app-btn" type="button" class="btn btn-secondary btn-sm">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                      <span>Ocultar App (Continuar em 2º Plano)</span>
+                    </button>
+                    <button id="bg-battery-opt-btn" type="button" class="btn btn-ghost btn-sm" hidden>
+                      <span>Liberar Bateria Irrestrita</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="whatsapp-cta-row">
+                  <a
+                    id="hero-whatsapp-btn"
+                    href="https://chat.whatsapp.com/G6q2VYw5h1BEWKx6VBJWHV?s=cl&p=a&iam=2"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn btn-whatsapp"
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                    </svg>
+                    <span>Participar do Grupo no WhatsApp (Atualizações &amp; Suporte)</span>
+                  </a>
                 </div>
 
                 <div class="hero-meta-footer">
@@ -604,6 +712,12 @@
               <div class="screen-actions">
                 <button id="logs-test-refresh-btn" type="button" class="btn btn-secondary">
                   Simular Invasão de IA
+                </button>
+                <button id="logs-export-pdf-btn" type="button" class="btn btn-primary">
+                  Resumo Semanal (PDF)
+                </button>
+                <button id="logs-export-txt-btn" type="button" class="btn btn-secondary">
+                  Resumo Semanal (TXT)
                 </button>
                 <button id="logs-clear-btn" type="button" class="btn btn-ghost">
                   Limpar Histórico
@@ -1104,6 +1218,195 @@
                     Importar Políticas do Texto
                   </button>
                 </div>
+              </div>
+            </section>
+          </section>
+
+          <!-- TELA 4: APOIO VIA PIX & MANIFESTO DE PRIVACIDADE -->
+          <section
+            id="screen-support"
+            class="screen"
+            aria-labelledby="support-heading"
+            hidden
+          >
+            <section class="surface-panel pix-hero-panel">
+              <div class="panel-header">
+                <div>
+                  <h1 id="support-heading" class="hero-title">
+                    Apoie o Desenvolvimento do AEGIS AI via PIX
+                  </h1>
+                  <p class="panel-subtitle">
+                    Projeto 100% gratuito, sem anúncios e sem venda de dados. Qualquer valor ajuda a manter melhorias, novas assinaturas de defesa e atualizações contínuas.
+                  </p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" data-screen="shield">
+                  Voltar ao Escudo Global
+                </button>
+              </div>
+
+              <div class="pix-donation-grid">
+                <div class="pix-qr-card">
+                  <div class="pix-qr-frame">
+                    <canvas
+                      id="pix-qr-canvas"
+                      width="240"
+                      height="240"
+                      aria-label="QR Code PIX para doação de qualquer valor"
+                    ></canvas>
+                  </div>
+                  <span class="pix-qr-caption">
+                    Escaneie no app do seu banco · Doação de qualquer valor
+                  </span>
+                </div>
+
+                <div class="pix-details-stack">
+                  <div class="pix-field-card">
+                    <div class="pix-field-head">
+                      <span class="field-label">Chave PIX (Aleatória)</span>
+                      <span class="pix-value-pill">Qualquer valor</span>
+                    </div>
+                    <div class="pix-copy-row">
+                      <code id="pix-key-value" class="pix-key-code mono"></code>
+                      <button id="copy-pix-key-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar Chave PIX
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="pix-field-card">
+                    <div class="pix-field-head">
+                      <label for="pix-brcode-text" class="field-label">
+                        PIX Copia e Cola (Padrão Oficial BR Code)
+                      </label>
+                      <span class="meta-text">Recebedor: Hevert Pereira</span>
+                    </div>
+                    <textarea
+                      id="pix-brcode-text"
+                      class="textarea mono pix-brcode-textarea"
+                      rows="3"
+                      readonly
+                    ></textarea>
+                    <div class="form-actions">
+                      <button id="copy-pix-brcode-btn" type="button" class="btn btn-secondary">
+                        Copiar Código PIX Copia e Cola
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="surface-panel whatsapp-support-panel" aria-labelledby="whatsapp-support-heading">
+              <div class="whatsapp-support-layout">
+                <div>
+                  <h2 id="whatsapp-support-heading" class="panel-title">
+                    Grupo Oficial no WhatsApp · Atualizações, Informações e Suporte
+                  </h2>
+                  <p class="panel-subtitle">
+                    Entre na comunidade do AEGIS AI para receber novas versões do APK instalável, avisos de novas assinaturas anti-IA, guias de privacidade e suporte direto.
+                  </p>
+                </div>
+                <a
+                  id="support-whatsapp-btn"
+                  href="https://chat.whatsapp.com/G6q2VYw5h1BEWKx6VBJWHV?s=cl&p=a&iam=2"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn btn-whatsapp btn-lg"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                  </svg>
+                  <span>Participar do Grupo no WhatsApp</span>
+                </a>
+              </div>
+            </section>
+
+            <section class="surface-panel" aria-labelledby="why-aegis-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="why-aegis-heading" class="panel-title">
+                    Por que é necessário usar o AEGIS AI para não ser monitorado pelas IAs?
+                  </h2>
+                  <p class="panel-subtitle">
+                    Entenda o que acontece em segundo plano enquanto você navega e usa aplicativos no celular
+                  </p>
+                </div>
+              </div>
+
+              <div class="manifesto-grid">
+                <article class="manifesto-card">
+                  <h3 class="manifesto-card-title">1. Coleta invisível e contínua sem aviso</h3>
+                  <p class="manifesto-card-text">
+                    Rastreadores comportamentais, bots raspadores de IA (como GPTBot, Bytespider e CCBot) e scripts de <em>session replay</em> operam nos bastidores registrando páginas visitadas, tempo de leitura, toques na tela e até textos digitados em formulários antes mesmo de você clicar em enviar.
+                  </p>
+                </article>
+
+                <article class="manifesto-card">
+                  <h3 class="manifesto-card-title">2. Proteção local no próprio aparelho</h3>
+                  <p class="manifesto-card-text">
+                    Em vez de enviar seu histórico para mais um servidor na nuvem, o AEGIS AI guarda regras, alertas e telemetria 100% no seu dispositivo (IndexedDB), bloqueando domínios maliciosos, enxames de requisições e conexões suspeitas de câmera/microfone via WebRTC.
+                  </p>
+                </article>
+
+                <article class="manifesto-card">
+                  <h3 class="manifesto-card-title">3. Vigilância ativa mesmo em modo oculto</h3>
+                  <p class="manifesto-card-text">
+                    Quando você alterna para outros apps no dia a dia, o Modo Oculto mantém o escudo operando continuamente em segundo plano e o Score de Risco alerta na hora caso haja tentativa de exfiltração ou sequestro de DNS.
+                  </p>
+                </article>
+              </div>
+            </section>
+
+            <section class="surface-panel" aria-labelledby="ai-society-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="ai-society-heading" class="panel-title">
+                    Por que as IAs buscam informações para mudar a forma da sociedade pensar?
+                  </h2>
+                  <p class="panel-subtitle">
+                    Os dados coletados não servem apenas para "responder perguntas": eles alimentam motores de previsão e persuasão em massa
+                  </p>
+                </div>
+              </div>
+
+              <div class="society-intro-box">
+                <p class="manifesto-card-text">
+                  Grandes sistemas de inteligência artificial e redes de rastreamento buscam o máximo possível de dados humanos porque <strong>quem conhece os hábitos, medos, dúvidas e desejos de milhões de pessoas consegue prever e direcionar decisões coletivas</strong>. Na economia da atenção, o objetivo não é apenas informar — é moldar o que você vê, em que acredita, o que compra e quanto tempo permanece engajado.
+                </p>
+              </div>
+
+              <div class="examples-grid">
+                <article class="example-card">
+                  <span class="example-index mono">EXEMPLO 01</span>
+                  <h3 class="manifesto-card-title">Bolhas algorítmicas e polarização de opinião</h3>
+                  <p class="manifesto-card-text">
+                    Ao monitorar em quais vídeos ou notícias você demora 2 segundos a mais, algoritmos selecionam apenas conteúdos que provocam indignação ou medo. Com o tempo, grupos inteiros passam a enxergar realidades opostas, mudando debates políticos, familiares e eleitorais sem que a pessoa perceba que o feed foi filtrado.
+                  </p>
+                </article>
+
+                <article class="example-card">
+                  <span class="example-index mono">EXEMPLO 02</span>
+                  <h3 class="manifesto-card-title">Indução de consumo e preços dinâmicos</h3>
+                  <p class="manifesto-card-text">
+                    Scripts de teste A/B e trackers cruzam seu histórico de buscas e urgência emocional para alterar automaticamente títulos, gatilhos de escassez ("últimas 2 unidades") e até valores exibidos, induzindo compras por impulso baseadas no seu perfil psicológico.
+                  </p>
+                </article>
+
+                <article class="example-card">
+                  <span class="example-index mono">EXEMPLO 03</span>
+                  <h3 class="manifesto-card-title">Padronização cultural ("consenso sintético")</h3>
+                  <p class="manifesto-card-text">
+                    Quando bots raspam artigos, fóruns e opiniões humanas para treinar modelos centralizados, determinadas narrativas passam a ser repetidas como a "resposta neutra e padrão". Estudantes, profissionais e cidadãos passam a aceitar uma única visão pré-mastigada, reduzindo a diversidade de ideias e o pensamento crítico.
+                  </p>
+                </article>
+
+                <article class="example-card">
+                  <span class="example-index mono">EXEMPLO 04</span>
+                  <h3 class="manifesto-card-title">Captura de microcomportamento e intenções privadas</h3>
+                  <p class="manifesto-card-text">
+                    Ferramentas de gravação de sessão e solicitações ocultas de mídia/rede capturam hesitações, termos apagados e horários de rotina. Esse mapa íntimo de vulnerabilidades permite campanhas de persuasão hipersegmentadas — desde publicidade até desinformação direcionada.
+                  </p>
+                </article>
               </div>
             </section>
           </section>

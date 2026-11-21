@@ -33,6 +33,7 @@ export const DNS_PRESETS = {
 export const DEFAULT_SETTINGS = {
   key: 'config',
   vpnActive: true,
+  backgroundMode: true,
   dnsPreset: 'cloudflare-sec',
   dnsIp: '1.1.1.2',
   dnsProtocol: 'DoH',
@@ -366,7 +367,7 @@ function createInitialLogs() {
   return [
     {
       id: 'log_init_1',
-      timestamp: now - 420_000,
+      timestamp: now - 48_000,
       domain: 'headless-scraper.ai.test',
       urlPath: '/v2/dom-harvest.js',
       category: 'ai_crawler',
@@ -377,7 +378,7 @@ function createInitialLogs() {
     },
     {
       id: 'log_init_2',
-      timestamp: now - 360_000,
+      timestamp: now - 38_000,
       domain: 'gptbot.openai.test',
       urlPath: '/crawler/index-feed',
       category: 'ai_crawler',
@@ -388,7 +389,7 @@ function createInitialLogs() {
     },
     {
       id: 'log_init_3',
-      timestamp: now - 300_000,
+      timestamp: now - 28_000,
       domain: 'cdn.optimizely.com',
       urlPath: '/js/2419820144.js',
       category: 'ab_testing',
@@ -399,7 +400,7 @@ function createInitialLogs() {
     },
     {
       id: 'log_init_4',
-      timestamp: now - 240_000,
+      timestamp: now - 20_000,
       domain: 'cdn.jsdelivr.net',
       urlPath: '/npm/chart.js@4.4.0/dist/chart.umd.min.js',
       category: 'essential',
@@ -410,7 +411,7 @@ function createInitialLogs() {
     },
     {
       id: 'log_init_5',
-      timestamp: now - 150_000,
+      timestamp: now - 12_000,
       domain: 'www.google-analytics.com',
       urlPath: '/g/collect?v=2&tid=G-94K2',
       category: 'tracker',
@@ -421,7 +422,7 @@ function createInitialLogs() {
     },
     {
       id: 'log_init_6',
-      timestamp: now - 90_000,
+      timestamp: now - 5_000,
       domain: 'fonts.googleapis.com',
       urlPath: '/css2?family=Plus+Jakarta+Sans',
       category: 'essential',

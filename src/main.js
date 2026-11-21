@@ -2,6 +2,7 @@ import { AegisStorage } from './db.js';
 import { AegisRadarEngine, RadarVisualizer } from './radar.js';
 import { CyberAlertAudio } from './audio.js';
 import { TelemetryChart } from './telemetry.js';
+import { AegisBackgroundMonitor } from './background.js';
 import { AegisApp } from './app.js';
 import { initPwaSupport } from './pwa.js';
 
@@ -10,6 +11,7 @@ async function bootstrap() {
   await storage.init();
 
   const audio = new CyberAlertAudio();
+  const backgroundMonitor = new AegisBackgroundMonitor();
   let appInstance = null;
   initPwaSupport(() => appInstance);
 
@@ -47,7 +49,7 @@ async function bootstrap() {
     },
   });
 
-  appInstance = new AegisApp(storage, engine, visualizer, audio, telemetry);
+  appInstance = new AegisApp(storage, engine, visualizer, audio, telemetry, backgroundMonitor);
   await appInstance.mount();
 }
 

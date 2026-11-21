@@ -1,4 +1,4 @@
-export const RISK_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+export const RISK_WINDOW_MS = 60 * 1000; // 1 minuto
 
 export const RISK_BANDS = [
   { id: 'safe', min: 0, max: 24, label: 'SEGURO', tone: 'safe' },
@@ -15,9 +15,12 @@ export function getRiskBand(score) {
   );
 }
 
-function formatAgeMinutes(ageMs) {
-  const mins = Math.max(1, Math.ceil(ageMs / 60_000));
-  return mins === 1 ? '1 min' : `${mins} min`;
+function formatAgeLabel(ageMs) {
+  const secs = Math.max(1, Math.round(ageMs / 1000));
+  if (secs < 60) {
+    return `${secs}s`;
+  }
+  return '1 min';
 }
 
 function pluralize(count, singular, plural) {
@@ -27,18 +30,25 @@ function pluralize(count, singular, plural) {
 export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Date.now() }) {
   const vpnActive = settings ? Boolean(settings.vpnActive) : true;
 
+  // Quando o monitoramento está desativado, nada está sendo monitorado -> ponteiro cai para 0
+  if (!vpnActive) {
+    return {
+      score: 0,
+      band: getRiskBand(0),
+      summary: 'Vigilância desativada · ponteiro zerado (nenhum monitoramento ativo).',
+      counts: {
+        dnsOrExfil: 0,
+        supplyOrAi: 0,
+        bursts: 0,
+        vpnPaused: true,
+      },
+      factorsCount: 0,
+      updatedAt: now,
+    };
+  }
+
   let rawScore = 0;
   const factors = [];
-
-  if (!vpnActive) {
-    rawScore += 25;
-    factors.push({
-      kind: 'vpn_paused',
-      points: 25,
-      timestamp: now,
-      label: 'Vigilância VPN pausada (+25 pts)',
-    });
-  }
 
   // Index resolved and active alerts to avoid double-counting identical incidents in logs
   const resolvedAlerts = alerts.filter(
@@ -55,7 +65,7 @@ export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Dat
         Math.abs(a.timestamp - log.timestamp) <= 15_000
     );
 
-  // 1) Active unresolved alerts in the 15-minute window
+  // 1) Active unresolved alerts in the 1-minute window
   for (const alert of activeAlerts) {
     const ageMs = Math.max(0, now - alert.timestamp);
     const decay = Math.max(0, 1 - ageMs / RISK_WINDOW_MS);
@@ -93,17 +103,21 @@ export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Dat
     });
   }
 
-  // 2) Recent blocked non-ambient logs (deduplicated per domain in 15s buckets)
-  const seenBuckets = new Set();
+  // 2) Recent blocked logs inside the 1-minute window (both non-ambient threats and ambient radar interceptions)
+  const seenNonAmbientBuckets = new Set();
+  const seenAmbientBuckets = new Set();
+  let ambientPointsTotal = 0;
+  const AMBIENT_POINTS_CAP = 28;
+
   for (const log of logs) {
-    if (!log || log.action !== 'blocked' || log.isAmbient) continue;
+    if (!log || log.action !== 'blocked') continue;
     const ageMs = Math.max(0, now - log.timestamp);
     if (ageMs >= RISK_WINDOW_MS) continue;
 
     // If user already resolved the corresponding alert, don't penalize its logs
     if (isCoveredByAlert(log, resolvedAlerts)) continue;
 
-    // Avoid double-counting Supply Chain / DNS Hijack / WebRTC alerts that already carry +35
+    // Avoid double-counting Supply Chain / DNS Hijack / WebRTC alerts that already carry +20/+35
     const matchingHighAlert = activeAlerts.some(
       (a) =>
         (a.type === 'dns_hijack' ||
@@ -115,12 +129,52 @@ export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Dat
     );
     if (matchingHighAlert) continue;
 
-    const bucketKey = `${log.domain}:${Math.floor(log.timestamp / 15_000)}`;
-    if (seenBuckets.has(bucketKey)) continue;
-    seenBuckets.add(bucketKey);
-
     const decay = Math.max(0, 1 - ageMs / RISK_WINDOW_MS);
+    if (decay <= 0) continue;
+
     const haystack = `${log.domain} ${log.urlPath || ''} ${log.reason || ''}`.toLowerCase();
+
+    if (log.isAmbient) {
+      // Deduplicate ambient radar/initial intercepts per domain in 15-second buckets
+      const ambientBucketKey = `${log.domain}:${Math.floor(log.timestamp / 15_000)}`;
+      if (seenAmbientBuckets.has(ambientBucketKey)) continue;
+      seenAmbientBuckets.add(ambientBucketKey);
+
+      let ambientBase = 6;
+      let kind = 'script_block';
+
+      if (
+        log.category === 'media_leak' ||
+        /webrtc|stun|turn-stream|mediastream|captura oculta/.test(haystack)
+      ) {
+        ambientBase = 20;
+        kind = 'webrtc_leak';
+      } else if (log.category === 'ai_crawler' || log.category === 'anomaly') {
+        ambientBase = 10;
+        kind = 'ai_bot';
+      } else if (log.category === 'ab_testing') {
+        ambientBase = 8;
+        kind = 'supply_chain';
+      }
+
+      const remainingCap = Math.max(0, AMBIENT_POINTS_CAP - ambientPointsTotal);
+      const decayedPoints = Math.min(remainingCap, ambientBase * decay);
+      if (decayedPoints <= 0) continue;
+
+      ambientPointsTotal += decayedPoints;
+      rawScore += decayedPoints;
+      factors.push({
+        kind,
+        points: decayedPoints,
+        timestamp: log.timestamp,
+        domain: log.domain,
+      });
+      continue;
+    }
+
+    const bucketKey = `${log.domain}:${Math.floor(log.timestamp / 10_000)}`;
+    if (seenNonAmbientBuckets.has(bucketKey)) continue;
+    seenNonAmbientBuckets.add(bucketKey);
 
     let basePoints = 10;
     let kind = 'script_block';
@@ -157,7 +211,7 @@ export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Dat
 
   const score = Math.min(100, Math.max(0, Math.round(rawScore)));
   const band = getRiskBand(score);
-  const summary = buildRiskSummary({ score, vpnActive, factors, now });
+  const summary = buildRiskSummary({ score, factors, now });
 
   const counts = {
     dnsOrExfil: factors.filter(
@@ -167,7 +221,7 @@ export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Dat
       (f) => f.kind === 'supply_chain' || f.kind === 'ai_bot' || f.kind === 'script_block'
     ).length,
     bursts: factors.filter((f) => f.kind === 'burst').length,
-    vpnPaused: !vpnActive,
+    vpnPaused: false,
   };
 
   return {
@@ -180,14 +234,11 @@ export function computeNetworkRisk({ settings, logs = [], alerts = [], now = Dat
   };
 }
 
-function buildRiskSummary({ score, vpnActive, factors, now }) {
-  const threatFactors = factors.filter((f) => f.kind !== 'vpn_paused');
+function buildRiskSummary({ score, factors, now }) {
+  const threatFactors = factors;
 
   if (threatFactors.length === 0) {
-    if (!vpnActive) {
-      return 'Vigilância VPN pausada (+25 pts) · ative o escudo para proteção integral.';
-    }
-    return 'Nenhuma anomalia ativa detectada · perímetro de rede estável.';
+    return 'Nenhuma anomalia ativa no último 1 min · perímetro de rede estável.';
   }
 
   const counts = {
@@ -206,7 +257,7 @@ function buildRiskSummary({ score, vpnActive, factors, now }) {
     oldestAgeMs = Math.max(oldestAgeMs, now - f.timestamp);
   }
 
-  const windowLabel = formatAgeMinutes(Math.min(RISK_WINDOW_MS, oldestAgeMs));
+  const windowLabel = formatAgeLabel(Math.min(RISK_WINDOW_MS, oldestAgeMs));
   const parts = [];
 
   if (counts.webrtc_leak > 0) {
@@ -243,11 +294,11 @@ function buildRiskSummary({ score, vpnActive, factors, now }) {
   }
 
   const primaryText = parts.slice(0, 2).join(' e ');
-  const vpnSuffix = !vpnActive ? ' · Vigilância VPN pausada (+25 pts)' : '';
 
   if (score === 0) {
-    return 'Eventos anteriores expiraram · perímetro de rede estável.';
+    return 'Eventos anteriores expiraram (janela 1 min) · perímetro de rede estável.';
   }
 
-  return `${primaryText} nos últimos ${windowLabel}${vpnSuffix}.`;
+  const prefix = windowLabel === '1 min' ? 'no último 1 min' : `nos últimos ${windowLabel}`;
+  return `${primaryText} ${prefix}.`;
 }

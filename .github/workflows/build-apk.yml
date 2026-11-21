@@ -54,6 +54,48 @@ jobs:
         run: |
           npm install --no-save --legacy-peer-deps @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
           npx cap add android
+          mkdir -p android/app/src/main/java/com/hevertpereira/aegisai
+          cp native-android/*.java android/app/src/main/java/com/hevertpereira/aegisai/
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          ANDROID_NS = 'http://schemas.android.com/apk/res/android'
+          ET.register_namespace('android', ANDROID_NS)
+          tree = ET.parse(manifest_path)
+          root = tree.getroot()
+          existing_perms = {
+              el.attrib.get(f'{{{ANDROID_NS}}}name')
+              for el in root.findall('uses-permission')
+          }
+          for perm in [
+              'android.permission.ACCESS_NETWORK_STATE',
+              'android.permission.FOREGROUND_SERVICE',
+              'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.WAKE_LOCK',
+              'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+          ]:
+              if perm not in existing_perms:
+                  el = ET.Element('uses-permission')
+                  el.set(f'{{{ANDROID_NS}}}name', perm)
+                  root.append(el)
+          app = root.find('application')
+          if app is not None:
+              svc_name = 'com.hevertpereira.aegisai.AegisBackgroundService'
+              has_svc = any(
+                  s.attrib.get(f'{{{ANDROID_NS}}}name') == svc_name
+                  for s in app.findall('service')
+              )
+              if not has_svc:
+                  svc = ET.Element('service')
+                  svc.set(f'{{{ANDROID_NS}}}name', svc_name)
+                  svc.set(f'{{{ANDROID_NS}}}enabled', 'true')
+                  svc.set(f'{{{ANDROID_NS}}}exported', 'false')
+                  svc.set(f'{{{ANDROID_NS}}}stopWithTask', 'false')
+                  svc.set(f'{{{ANDROID_NS}}}foregroundServiceType', 'dataSync')
+                  app.append(svc)
+          tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
+          PY
           for dir in android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi; do
             if [ -d "$dir" ]; then
               [ -f "$dir/ic_launcher.png" ] && cp public/pwa-192x192.png "$dir/ic_launcher.png"
@@ -66,6 +108,8 @@ jobs:
       - name: Compilar APK Debug instalável
         working-directory: android
         run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${GITHUB_RUN_NUMBER:-2}/" app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"2.4.${GITHUB_RUN_NUMBER:-2}\"/" app/build.gradle
           chmod +x gradlew
           ./gradlew assembleDebug
 

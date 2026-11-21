@@ -5,11 +5,15 @@ import {
   normalizeDomain,
 } from './db.js';
 import { computeNetworkRisk } from './risk.js';
+import { PIX_DONATION_KEY, buildPixCopyPaste } from './pix.js';
+import { renderQrToCanvas } from './qrcode.js';
+import { exportWeeklyReport } from './report.js';
 
 const SCREEN_TITLES = {
   shield: 'Escudo Global',
   logs: 'Radar & Logs',
   rules: 'Regras & Defesa',
+  support: 'Apoiar via PIX',
 };
 
 const CATEGORY_LABELS = {
@@ -58,12 +62,13 @@ function formatTime(ts) {
 }
 
 export class AegisApp {
-  constructor(storage, engine, visualizer, audio, telemetry) {
+  constructor(storage, engine, visualizer, audio, telemetry, backgroundMonitor = null) {
     this.storage = storage;
     this.engine = engine;
     this.visualizer = visualizer;
     this.audio = audio;
     this.telemetry = telemetry;
+    this.backgroundMonitor = backgroundMonitor;
 
     this.state = {
       activeScreen: 'shield',
@@ -95,18 +100,110 @@ export class AegisApp {
     this.telemetry?.setActive(Boolean(this.state.settings.vpnActive));
     this.engine.startBackgroundLoop(Boolean(this.state.settings.vpnActive));
 
+    await this._reconcileBackgroundResume();
+    await this._syncBackgroundService();
+    await this._refreshBatteryOptimizationUi();
+
     if (this._riskDecayTimer !== null) {
       window.clearInterval(this._riskDecayTimer);
     }
     this._riskDecayTimer = window.setInterval(() => {
       if (!this.state.settings) return;
-      this.state.risk = computeNetworkRisk({
-        settings: this.state.settings,
-        logs: this.state.logs,
-        alerts: this.state.alerts,
-      });
       this._renderRiskScore();
-    }, 10_000);
+    }, 1_000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        if (this.state.settings?.vpnActive && this.state.settings?.backgroundMode !== false) {
+          this.backgroundMonitor?.markHeartbeatTimestamp();
+          this._syncBackgroundService();
+        }
+      } else if (document.visibilityState === 'visible') {
+        this._reconcileBackgroundResume();
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      this._reconcileBackgroundResume();
+    });
+  }
+
+  async _syncBackgroundService() {
+    if (!this.backgroundMonitor || !this.state.settings) return;
+    const { settings, rules } = this.state;
+    await this.backgroundMonitor.syncState({
+      vpnActive: Boolean(settings.vpnActive),
+      backgroundMode: settings.backgroundMode !== false,
+      dnsLabel: `${settings.dnsIp} (${settings.dnsProtocol})`,
+      rulesCount: rules.filter((r) => r.enabled).length,
+    });
+  }
+
+  async _refreshBatteryOptimizationUi() {
+    const btn = document.getElementById('bg-battery-opt-btn');
+    if (!btn || !this.backgroundMonitor) return;
+    const status = await this.backgroundMonitor.getBatteryOptimizationStatus();
+    btn.hidden = !status.supported || status.ignoring;
+  }
+
+  async hideToBackground() {
+    const current = this.state.settings || (await this.storage.getSettings());
+    if (!current.vpnActive || current.backgroundMode === false) {
+      this.state.settings = await this.storage.saveSettings({
+        ...current,
+        vpnActive: true,
+        backgroundMode: true,
+      });
+      this.visualizer.setActive(true);
+      this.telemetry?.setActive(true);
+      this.engine.startBackgroundLoop(true);
+      this.render();
+    }
+
+    const { settings, rules } = this.state;
+    const res = await this.backgroundMonitor.minimizeToBackground({
+      dnsLabel: `${settings.dnsIp} (${settings.dnsProtocol})`,
+      rulesCount: rules.filter((r) => r.enabled).length,
+    });
+
+    if (res.native && res.minimized) {
+      return;
+    }
+
+    this.showToast(
+      'Modo Oculto ativo em 2º plano. Você pode trocar para outro aplicativo sem fechar esta aba.',
+      'success'
+    );
+  }
+
+  async _reconcileBackgroundResume() {
+    if (!this.backgroundMonitor) return;
+    await this.backgroundMonitor.reconcileOnResume({
+      storage: this.storage,
+      engine: this.engine,
+      onSyncResult: async (result) => {
+        if (result.stoppedFromNotification) {
+          this.visualizer.setActive(false);
+          this.telemetry?.setActive(false);
+          this.engine.startBackgroundLoop(false);
+          await this.refreshAll();
+          this.showToast(
+            'Vigilância encerrada pelo atalho da barra de notificações.',
+            'warn'
+          );
+          return;
+        }
+
+        if (result.cyclesProcessed > 0 || result.networkEvents > 0) {
+          await this.refreshAll();
+          this.showToast(
+            `Modo Oculto ativo (~${result.elapsedMinutes} min): ${result.cyclesProcessed} ciclos monitorados em 2º plano.`,
+            'info'
+          );
+        }
+      },
+    });
+    await this._refreshBatteryOptimizationUi();
   }
 
   async refreshAll() {
@@ -176,6 +273,68 @@ export class AegisApp {
     if (screenName === 'shield') {
       this.telemetry?.draw();
     }
+    if (screenName === 'support') {
+      this._renderSupportScreen();
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    } else {
+      this._clearSupportScreen();
+    }
+  }
+
+  _renderSupportScreen() {
+    const keyEl = document.getElementById('pix-key-value');
+    const brcodeEl = document.getElementById('pix-brcode-text');
+    const qrCanvas = document.getElementById('pix-qr-canvas');
+    const brCode = buildPixCopyPaste({ pixKey: PIX_DONATION_KEY });
+
+    if (keyEl) {
+      keyEl.textContent = PIX_DONATION_KEY;
+    }
+    if (brcodeEl) {
+      brcodeEl.value = brCode;
+    }
+    if (qrCanvas) {
+      renderQrToCanvas(qrCanvas, brCode, { quietZone: 4, moduleSize: 5 });
+    }
+  }
+
+  _clearSupportScreen() {
+    const keyEl = document.getElementById('pix-key-value');
+    const brcodeEl = document.getElementById('pix-brcode-text');
+    const qrCanvas = document.getElementById('pix-qr-canvas');
+    if (keyEl) keyEl.textContent = '';
+    if (brcodeEl) brcodeEl.value = '';
+    if (qrCanvas) {
+      const ctx = qrCanvas.getContext?.('2d');
+      ctx?.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
+    }
+  }
+
+  async _copyTextWithFeedback(text, successMsg) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error('clipboard_unavailable');
+      }
+      this.showToast(successMsg, 'success');
+    } catch {
+      try {
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        helper.remove();
+        this.showToast(successMsg, 'success');
+      } catch {
+        this.showToast('Selecione o texto manualmente para copiar.', 'warn');
+      }
+    }
   }
 
   showToast(message, variant = 'info') {
@@ -203,12 +362,38 @@ export class AegisApp {
     this.visualizer.setActive(nextActive);
     this.telemetry?.setActive(nextActive);
     this.engine.startBackgroundLoop(nextActive);
+    await this._syncBackgroundService();
     this.render();
+    this._syncRedAlertState();
+    this.storage.saveRiskSnapshot(this.state.risk).catch(() => {});
     this.showToast(
       nextActive
-        ? 'Vigilância VPN local ativada. Escudo contra IA e bots em operação.'
-        : 'Vigilância VPN local pausada. Rede sem contenção ativa.',
+        ? updated.backgroundMode !== false
+          ? 'Vigilância ativada com Modo Oculto em 2º plano.'
+          : 'Vigilância VPN local ativada.'
+        : 'Vigilância pausada e monitoramento oculto encerrado.',
       nextActive ? 'success' : 'warn'
+    );
+  }
+
+  async toggleBackgroundMode(explicitEnabled) {
+    const current = this.state.settings || (await this.storage.getSettings());
+    const nextBg =
+      typeof explicitEnabled === 'boolean'
+        ? explicitEnabled
+        : current.backgroundMode === false;
+    const updated = await this.storage.saveSettings({
+      ...current,
+      backgroundMode: nextBg,
+    });
+    this.state.settings = updated;
+    await this._syncBackgroundService();
+    this.render();
+    this.showToast(
+      nextBg
+        ? 'Modo Oculto ativado: vigilância permanece rodando ao usar outros apps.'
+        : 'Modo Oculto desativado: vigilância roda apenas com o app aberto.',
+      nextBg ? 'success' : 'info'
     );
   }
 
@@ -283,6 +468,18 @@ export class AegisApp {
   }
 
   _syncRedAlertState() {
+    if (!this.state.settings?.vpnActive) {
+      document.body.classList.remove('is-red-alert');
+      const banner = document.getElementById('red-alert-banner');
+      if (banner) banner.hidden = true;
+      if (this.state.activeRedAlertId !== null) {
+        this.state.activeRedAlertId = null;
+        this.audio?.stopAlert();
+      }
+      this._syncRiskPanelCriticalPulse();
+      return;
+    }
+
     const activeRedAlert = this.state.alerts.find(
       (a) =>
         !a.acknowledged &&
@@ -449,13 +646,11 @@ export class AegisApp {
   }
 
   _renderRiskScore() {
-    const risk =
-      this.state.risk ||
-      computeNetworkRisk({
-        settings: this.state.settings,
-        logs: this.state.logs,
-        alerts: this.state.alerts,
-      });
+    const risk = computeNetworkRisk({
+      settings: this.state.settings,
+      logs: this.state.logs,
+      alerts: this.state.alerts,
+    });
     this.state.risk = risk;
 
     const panel = document.getElementById('risk-score-panel');
@@ -465,6 +660,9 @@ export class AegisApp {
     const summaryEl = document.getElementById('risk-score-summary');
     const progressEl = document.getElementById('risk-gauge-progress');
     const dotEl = document.getElementById('risk-gauge-dot');
+    const needleEl = document.getElementById('risk-gauge-needle');
+    const needleTipEl = document.getElementById('risk-gauge-needle-tip');
+    const needleStemEl = document.getElementById('risk-gauge-needle-stem');
 
     const toneColors = {
       safe: '#22d3ee',
@@ -510,6 +708,17 @@ export class AegisApp {
       dotEl.setAttribute('fill', strokeColor);
     }
 
+    if (needleEl) {
+      const angleDeg = -90 + clampedRatio * 180;
+      needleEl.style.transform = `rotate(${angleDeg.toFixed(2)}deg)`;
+    }
+    if (needleTipEl) {
+      needleTipEl.setAttribute('fill', strokeColor);
+    }
+    if (needleStemEl) {
+      needleStemEl.setAttribute('stroke', strokeColor);
+    }
+
     document.querySelectorAll('[data-band-seg]').forEach((seg) => {
       seg.classList.toggle('is-current', seg.getAttribute('data-band-seg') === risk.band.id);
     });
@@ -524,9 +733,10 @@ export class AegisApp {
     if (burstFactorEl) burstFactorEl.textContent = `Rajada / Polling (+10): ${risk.counts.bursts}`;
     if (vpnFactorEl) {
       vpnFactorEl.textContent = risk.counts.vpnPaused
-        ? 'VPN (+25): Pausada'
-        : 'VPN (+25 se pausada): Ativa';
+        ? 'Monitoramento: Desativado (0 pts)'
+        : 'Monitoramento: Ativo';
     }
+    this._syncRiskPanelCriticalPulse();
   }
 
   _renderShieldScreen() {
@@ -581,6 +791,24 @@ export class AegisApp {
     const heroRulesCount = document.getElementById('hero-rules-count');
     if (heroRulesCount) {
       heroRulesCount.textContent = String(rules.filter((r) => r.enabled).length);
+    }
+
+    const bgToggle = document.getElementById('toggle-background-mode');
+    const bgBadge = document.getElementById('bg-mode-badge');
+    const bgEnabled = settings.backgroundMode !== false;
+    if (bgToggle) {
+      bgToggle.checked = bgEnabled;
+    }
+    if (bgBadge) {
+      const bgActiveNow = bgEnabled && isActive;
+      bgBadge.classList.toggle('is-active', bgActiveNow);
+      if (!bgEnabled) {
+        bgBadge.textContent = 'Desativado';
+      } else if (isActive) {
+        bgBadge.textContent = 'Ativo em 2º plano';
+      } else {
+        bgBadge.textContent = 'Aguardando escudo';
+      }
     }
 
     const radarCaption = document.getElementById('radar-last-event');
@@ -1187,6 +1415,30 @@ export class AegisApp {
     document
       .getElementById('hero-vpn-toggle-btn')
       ?.addEventListener('click', () => this.toggleVpn());
+    document.getElementById('toggle-background-mode')?.addEventListener('change', (e) => {
+      this.toggleBackgroundMode(Boolean(e.target.checked));
+    });
+    document.getElementById('bg-hide-app-btn')?.addEventListener('click', () => {
+      this.hideToBackground();
+    });
+    document.getElementById('bg-battery-opt-btn')?.addEventListener('click', async () => {
+      await this.backgroundMonitor?.requestBatteryOptimizationExemption();
+    });
+
+    document.getElementById('copy-pix-key-btn')?.addEventListener('click', () => {
+      this._copyTextWithFeedback(
+        PIX_DONATION_KEY,
+        'Chave PIX copiada! Abra o app do seu banco para doar qualquer valor.'
+      );
+    });
+
+    document.getElementById('copy-pix-brcode-btn')?.addEventListener('click', () => {
+      const brCode = buildPixCopyPaste({ pixKey: PIX_DONATION_KEY });
+      this._copyTextWithFeedback(
+        brCode,
+        'Código PIX Copia e Cola copiado! Cole na área PIX do seu banco.'
+      );
+    });
 
     document.getElementById('hero-simulate-burst-btn')?.addEventListener('click', async () => {
       await this.engine.simulateMixedTraffic();
@@ -1210,6 +1462,37 @@ export class AegisApp {
       await this.engine.simulateBurstAttack();
       await this.refreshAll();
       this.showToast('Invasão de IA simulada e contida pelo motor heurístico.', 'warn');
+    });
+
+    const handleExportWeekly = async (format) => {
+      try {
+        const result = await exportWeeklyReport({
+          format,
+          settings: this.state.settings || (await this.storage.getSettings()),
+          rules: this.state.rules || [],
+          logs: this.state.logs || [],
+          alerts: this.state.alerts || [],
+        });
+        this.showToast(
+          result.nativeSaved
+            ? `Resumo semanal salvo em ${result.location}`
+            : `Resumo semanal ${result.format.toUpperCase()} gerado (${result.filename}).`,
+          'success'
+        );
+      } catch (err) {
+        this.showToast(
+          `Não foi possível gerar o resumo semanal: ${err?.message || 'erro desconhecido'}`,
+          'danger'
+        );
+      }
+    };
+
+    document.getElementById('logs-export-pdf-btn')?.addEventListener('click', () => {
+      handleExportWeekly('pdf');
+    });
+
+    document.getElementById('logs-export-txt-btn')?.addEventListener('click', () => {
+      handleExportWeekly('txt');
     });
 
     document.getElementById('logs-clear-btn')?.addEventListener('click', async () => {

@@ -92,28 +92,35 @@ export class AegisRadarEngine {
     this.stopBackgroundLoop();
     if (!isActive) return;
 
-    const ambientCatalog = TRAFFIC_CATALOG.filter(
-      (item) => item.category === 'essential' || item.category === 'tracker'
+    const essentialPool = TRAFFIC_CATALOG.filter((item) => item.category === 'essential');
+    const trackerPool = TRAFFIC_CATALOG.filter(
+      (item) => item.category === 'tracker' || item.category === 'third_party'
+    );
+    const aiPool = TRAFFIC_CATALOG.filter(
+      (item) => item.category === 'ai_crawler' || item.category === 'ab_testing'
     );
 
-    const scheduleNext = () => {
-      const delay = 1800 + Math.floor(Math.random() * 1400);
+    const scheduleNext = (initial = false) => {
+      const delay = initial ? 350 : 1800 + Math.floor(Math.random() * 1400);
       this.timerId = window.setTimeout(async () => {
         const settings = await this.storage.getSettings();
         if (!settings.vpnActive) return;
-        const useNormal = Math.random() < 0.72;
-        const pool = useNormal
-          ? ambientCatalog.filter((i) => i.category === 'essential')
-          : ambientCatalog;
-        const sample = pool[Math.floor(Math.random() * pool.length)];
+        const roll = initial ? 0.8 : Math.random();
+        const pool =
+          roll < 0.65
+            ? essentialPool
+            : roll < 0.9
+            ? trackerPool
+            : aiPool;
+        const sample = pool[Math.floor(Math.random() * pool.length)] || TRAFFIC_CATALOG[0];
         await this.processRequest(sample.domain, sample.urlPath, sample.category, {
           isAmbient: true,
         });
-        scheduleNext();
+        scheduleNext(false);
       }, delay);
     };
 
-    scheduleNext();
+    scheduleNext(true);
   }
 
   stopBackgroundLoop() {
