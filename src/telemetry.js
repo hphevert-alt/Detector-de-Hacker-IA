@@ -6,6 +6,7 @@ export class TelemetryChart {
     this.bucketMs = options.bucketMs || 15_000; // 15s por ciclo (janela de ~7.5 min)
     this.clearedAt = 0;
     this.isActive = true;
+    this.isOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
     this.logs = [];
     this.hoverIndex = -1;
     this.pulsePhase = 0;
@@ -24,7 +25,16 @@ export class TelemetryChart {
 
   setActive(active) {
     this.isActive = Boolean(active);
-    if (this.isActive && !this.prefersReducedMotion) {
+    this._syncLoopState();
+  }
+
+  setOnline(online) {
+    this.isOnline = Boolean(online);
+    this._syncLoopState();
+  }
+
+  _syncLoopState() {
+    if (this.isActive && this.isOnline && !this.prefersReducedMotion) {
       this._startLoop();
     } else {
       this._stopLoop();
@@ -47,7 +57,7 @@ export class TelemetryChart {
   _startLoop() {
     if (this.rafId !== null) return;
     const tick = (ts) => {
-      if (!this.isActive || this.prefersReducedMotion) {
+      if (!this.isActive || !this.isOnline || this.prefersReducedMotion) {
         this.rafId = null;
         return;
       }
@@ -311,7 +321,7 @@ export class TelemetryChart {
     const lastNormal = normalPts[normalPts.length - 1];
     const lastBlocked = blockedPts[blockedPts.length - 1];
 
-    if (this.isActive) {
+    if (this.isActive && this.isOnline) {
       const ringRadius = 4 + Math.sin(this.pulsePhase) * 2.5;
       const ringAlpha = 0.45 - Math.sin(this.pulsePhase) * 0.25;
 
@@ -330,7 +340,7 @@ export class TelemetryChart {
         ctx.fillStyle = color;
         ctx.fill();
       });
-    } else {
+    } else if (!this.isActive) {
       // Elegant paused indicator overlay
       ctx.fillStyle = 'rgba(8, 12, 20, 0.56)';
       ctx.fillRect(padLeft, padTop, plotW, plotH);
@@ -343,6 +353,34 @@ export class TelemetryChart {
         'Vigilância pausada · telemetria congelada',
         padLeft + plotW / 2,
         padTop + plotH / 2
+      );
+    } else {
+      // Offline non-blocking indicator badge inside plot
+      const pillW = Math.min(plotW - 16, 260);
+      const pillH = 26;
+      const pillX = padLeft + plotW - pillW - 8;
+      const pillY = padTop + 8;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+      } else {
+        ctx.rect(pillX, pillY, pillW, pillH);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillStyle = '#fbbf24';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        'REDE OFFLINE · VARREDURA PAUSADA',
+        pillX + pillW / 2,
+        pillY + pillH / 2
       );
     }
 

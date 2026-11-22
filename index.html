@@ -284,6 +284,26 @@
               </div>
             </aside>
 
+            <aside
+              id="offline-network-banner"
+              class="surface-panel offline-network-banner"
+              role="status"
+              aria-live="polite"
+              hidden
+            >
+              <div class="offline-banner-copy">
+                <strong class="offline-banner-title">
+                  Dispositivo sem internet (Modo Offline)
+                </strong>
+                <p class="offline-banner-desc">
+                  Monitoramento automático externo suspenso — nenhum tráfego ou log de rede fictício é gerado sem conexão. Os testes do <strong>Simulador de Invasão de IA</strong> e a <strong>Inspeção Manual</strong> seguem disponíveis sob seu comando explícito.
+                </p>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" data-goto-screen="rules">
+                Abrir Simulador / Inspeção Manual
+              </button>
+            </aside>
+
             <section
               id="risk-score-panel"
               class="surface-panel risk-score-panel is-safe"
@@ -450,6 +470,11 @@
                     <span id="vpn-status-text">Vigilância VPN Ativa</span>
                   </span>
                   <span class="meta-sep" aria-hidden="true">·</span>
+                  <span id="network-online-indicator" class="status-indicator network-indicator is-online">
+                    <span class="status-glyph" aria-hidden="true"></span>
+                    <span id="network-online-text">Rede Online</span>
+                  </span>
+                  <span class="meta-sep" aria-hidden="true">·</span>
                   <span id="threat-level-text" class="threat-status is-guarded">
                     Ameaça de Rede: Baixa / Contida
                   </span>
@@ -498,6 +523,24 @@
                       <span class="switch-track"></span>
                     </label>
                   </div>
+                  <div class="bg-cyclic-telemetry" aria-label="Telemetria do contador cíclico e Visibility API">
+                    <div class="bg-cyclic-cell">
+                      <span class="bg-cyclic-label">Ciclos IndexedDB</span>
+                      <strong id="bg-cyclic-count" class="bg-cyclic-value mono tabular-nums">0</strong>
+                    </div>
+                    <div class="bg-cyclic-cell">
+                      <span class="bg-cyclic-label">Precisão / Drift</span>
+                      <strong id="bg-cyclic-precision" class="bg-cyclic-value mono tabular-nums">±0 ms</strong>
+                    </div>
+                    <div class="bg-cyclic-cell">
+                      <span class="bg-cyclic-label">Visibility API</span>
+                      <strong id="bg-visibility-state" class="bg-cyclic-value mono">Visível</strong>
+                    </div>
+                    <div class="bg-cyclic-cell">
+                      <span class="bg-cyclic-label">Em 2º Plano</span>
+                      <strong id="bg-hidden-duration" class="bg-cyclic-value mono tabular-nums">0s · 0 ocultos</strong>
+                    </div>
+                  </div>
                   <div class="bg-mode-actions">
                     <button id="bg-hide-app-btn" type="button" class="btn btn-secondary btn-sm">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -511,6 +554,52 @@
                       <span>Liberar Bateria Irrestrita</span>
                     </button>
                   </div>
+                </div>
+
+                <div id="push-alerts-box" class="bg-mode-box push-alerts-box" aria-live="polite">
+                  <div class="bg-mode-header">
+                    <div class="bg-mode-copy">
+                      <div class="bg-mode-title-row">
+                        <span class="bg-mode-title">Web Push · Alertas Críticos</span>
+                        <span id="push-status-badge" class="bg-mode-badge">
+                          Desativado
+                        </span>
+                      </div>
+                      <p id="push-status-desc" class="bg-mode-desc">
+                        Receba notificações no aparelho apenas para ameaças de nível <strong>Crítico</strong>, mesmo com o navegador minimizado ou fechado em 2º plano.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="bg-mode-actions">
+                    <button id="push-enable-btn" type="button" class="btn btn-primary btn-sm">
+                      Ativar Push Crítico
+                    </button>
+                    <button id="push-test-btn" type="button" class="btn btn-secondary btn-sm">
+                      Testar Push Crítico
+                    </button>
+                  </div>
+                  <details class="push-vapid-details">
+                    <summary class="push-vapid-summary">
+                      Configurar chave VAPID (Push Remoto PushManager)
+                    </summary>
+                    <div class="push-vapid-body">
+                      <div class="inline-input-group">
+                        <input
+                          id="push-vapid-input"
+                          type="text"
+                          class="input mono"
+                          placeholder="Chave Pública VAPID Base64URL (opcional)"
+                          aria-label="Chave Pública VAPID Base64URL"
+                        />
+                        <button id="push-vapid-save-btn" type="button" class="btn btn-secondary btn-sm">
+                          Registrar VAPID
+                        </button>
+                      </div>
+                      <span id="push-subscription-meta" class="meta-text mono">
+                        Modo: Service Worker Push Local + PushManager pronto
+                      </span>
+                    </div>
+                  </details>
                 </div>
 
                 <div class="whatsapp-cta-row">
@@ -650,6 +739,10 @@
                     <dd id="net-tunnel-state" class="mono">Ativa · Escudo global operando</dd>
                   </div>
                   <div class="spec-row">
+                    <dt>Conectividade Real</dt>
+                    <dd id="net-connectivity-state" class="mono">Online · Inspeção externa habilitada</dd>
+                  </div>
+                  <div class="spec-row">
                     <dt>Nível de Ameaça Atual</dt>
                     <dd id="net-threat-level" class="mono">Baixo · Sem invasões ativas</dd>
                   </div>
@@ -724,6 +817,26 @@
                 </button>
               </div>
             </div>
+
+            <aside
+              id="logs-offline-banner"
+              class="surface-panel offline-network-banner"
+              role="status"
+              aria-live="polite"
+              hidden
+            >
+              <div class="offline-banner-copy">
+                <strong class="offline-banner-title">
+                  Radar &amp; Logs sem conexão à internet (Offline)
+                </strong>
+                <p class="offline-banner-desc">
+                  Sem inventar logs de rede em segundo plano. Use <strong>Simular Invasão de IA</strong> ou a <strong>Inspeção Manual</strong> caso queira executar um teste sob demanda.
+                </p>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" data-goto-screen="rules">
+                Inspeção Manual &amp; Simulador
+              </button>
+            </aside>
 
             <section class="surface-panel" aria-labelledby="alerts-heading">
               <div class="panel-header">
@@ -971,6 +1084,9 @@
                   <label for="manual-probe-input" class="field-label">
                     Inspecionar Domínio ou Script Manualmente
                   </label>
+                  <span class="meta-text">
+                    Quando online, executa sonda real (<span class="mono">fetch no-cors</span>, timeout 4s) combinada às regras e heurísticas locais.
+                  </span>
                   <div class="inline-input-group">
                     <input
                       id="manual-probe-input"
@@ -979,7 +1095,9 @@
                       placeholder="ex: crawler.ia-scraper.test/v1/extract.js"
                       required
                     />
-                    <button type="submit" class="btn btn-primary">Inspecionar</button>
+                    <button id="manual-probe-submit-btn" type="submit" class="btn btn-primary">
+                      Inspecionar
+                    </button>
                   </div>
                 </form>
 
@@ -1080,6 +1198,147 @@
               <div id="signatures-grid" class="signatures-grid"></div>
             </section>
 
+            <!-- Importação Rápida de Listas (Hosts / Domínios) + Desfazer -->
+            <section class="surface-panel" aria-labelledby="bulk-lists-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="bulk-lists-heading" class="panel-title">
+                    Importação Rápida de Listas (Hosts / Domínios)
+                  </h2>
+                  <p class="panel-subtitle">
+                    Importe pacotes públicos gratuitos (HaGeZi, AI-Crawler-Blocklist, StevenBlack), cole texto ou envie arquivos (<span class="mono">.txt / .list / .hosts</span>) com normalização automática, deduplicação, categorização inteligente e respeito à Allowlist
+                  </p>
+                </div>
+                <div class="json-header-actions">
+                  <span id="bulk-rules-count-badge" class="meta-text mono tabular-nums">
+                    0 importadas em massa
+                  </span>
+                  <button
+                    id="bulk-undo-btn"
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    disabled
+                  >
+                    Desfazer Última Importação
+                  </button>
+                </div>
+              </div>
+
+              <div class="bulk-presets-grid" role="group" aria-label="Listas públicas gratuitas recomendadas">
+                <button
+                  type="button"
+                  class="bulk-preset-card"
+                  data-bulk-preset="hagezi_light"
+                >
+                  <span class="bulk-preset-title">HaGeZi Multi Light</span>
+                  <span class="bulk-preset-meta">Trackers, Ads &amp; Telemetria · GitHub</span>
+                </button>
+                <button
+                  type="button"
+                  class="bulk-preset-card"
+                  data-bulk-preset="ai_crawler_huge"
+                >
+                  <span class="bulk-preset-title">AI-Crawler Blocklist</span>
+                  <span class="bulk-preset-meta">Bots, Scrapers &amp; Treino de IA · GitHub</span>
+                </button>
+                <button
+                  type="button"
+                  class="bulk-preset-card"
+                  data-bulk-preset="hagezi_tif_mini"
+                >
+                  <span class="bulk-preset-title">HaGeZi Threat Intel Mini</span>
+                  <span class="bulk-preset-meta">Phishing, C2 &amp; Terceiros · GitHub</span>
+                </button>
+                <button
+                  type="button"
+                  class="bulk-preset-card"
+                  data-bulk-preset="stevenblack_hosts"
+                >
+                  <span class="bulk-preset-title">StevenBlack Unified Hosts</span>
+                  <span class="bulk-preset-meta">Formato hosts aberto · GitHub</span>
+                </button>
+              </div>
+
+              <div class="bulk-importer-grid">
+                <div class="bulk-import-card">
+                  <div class="field">
+                    <label for="bulk-list-url-input" class="field-label">
+                      URL Pública Gratuita (raw.githubusercontent.com / hosts / lista de domínios · requer internet)
+                    </label>
+                    <div class="inline-input-group">
+                      <input
+                        id="bulk-list-url-input"
+                        type="url"
+                        class="input mono"
+                        placeholder="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt"
+                      />
+                      <button id="bulk-import-url-btn" type="button" class="btn btn-primary">
+                        Baixar &amp; Importar URL
+                      </button>
+                    </div>
+                    <div id="bulk-url-offline-note" class="bulk-url-offline-note" hidden>
+                      Dispositivo sem internet (offline): importação via URL indisponível. Cole texto ou envie arquivo <span class="mono">.txt / .list / .hosts</span> ao lado normalmente.
+                    </div>
+                  </div>
+
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="bulk-category-select" class="field-label">
+                        Categorização de Domínios
+                      </label>
+                      <select id="bulk-category-select" class="select">
+                        <option value="auto">Automática (Bot/IA, Rastreador, A/B, Terceiros, Manual)</option>
+                        <option value="ai_crawler">Forçar: Bot / IA</option>
+                        <option value="tracker">Forçar: Rastreador</option>
+                        <option value="ab_testing">Forçar: A/B Testing</option>
+                        <option value="third_party">Forçar: Terceiros</option>
+                        <option value="manual">Forçar: Bloqueio Manual</option>
+                      </select>
+                    </div>
+
+                    <div class="field bulk-checkbox-wrap">
+                      <span class="field-label">Precedência de Segurança</span>
+                      <label class="checkbox-row">
+                        <input id="bulk-respect-allowlist" type="checkbox" checked />
+                        <span>Respeitar Allowlist (nunca sobrescrever permitidos)</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bulk-import-card">
+                  <label for="bulk-list-textarea" class="field-label">
+                    Cole texto ou envie arquivo (.txt / .list / .hosts) — normaliza "#", 0.0.0.0, 127.0.0.1, localhost, http(s):// e caminhos
+                  </label>
+                  <textarea
+                    id="bulk-list-textarea"
+                    class="textarea mono"
+                    rows="5"
+                    placeholder="# Exemplo hosts ou domínios&#10;0.0.0.0 crawler.exemplo-ia.com&#10;127.0.0.1 ads.rastreador.net&#10;https://telemetry.terceiros.org/collect.js?v=1&#10;localhost"
+                  ></textarea>
+                  <div class="bulk-text-actions">
+                    <label for="bulk-list-file" class="btn btn-secondary file-label">
+                      Enviar Arquivo (.txt / .list / .hosts)
+                    </label>
+                    <input
+                      id="bulk-list-file"
+                      type="file"
+                      accept=".txt,.list,.hosts,.conf,.csv,text/plain"
+                      hidden
+                    />
+                    <button id="bulk-import-text-btn" type="button" class="btn btn-primary">
+                      Processar &amp; Importar Texto
+                    </button>
+                    <button id="clear-bulk-rules-btn" type="button" class="btn btn-ghost">
+                      Remover Listas Importadas
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="bulk-import-status" class="bulk-import-status" aria-live="polite" hidden></div>
+            </section>
+
             <!-- Gerenciamento de Listas -->
             <section class="surface-panel" aria-labelledby="rules-manager-heading">
               <div class="panel-header">
@@ -1162,6 +1421,13 @@
                   <tbody id="rules-tbody"></tbody>
                 </table>
               </div>
+
+              <div id="rules-pagination-row" class="rules-pagination-row" hidden>
+                <span id="rules-showing-text" class="meta-text tabular-nums"></span>
+                <button id="rules-load-more-btn" type="button" class="btn btn-secondary btn-sm">
+                  Carregar +150 Regras
+                </button>
+              </div>
             </section>
 
             <!-- Exportação e Importação JSON -->
@@ -1217,6 +1483,208 @@
                   <button id="import-json-apply-btn" type="button" class="btn btn-primary">
                     Importar Políticas do Texto
                   </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Ponte Nativa Android: JSON de Políticas, AegisGuardVpnService, AegisVpnBridge & MainActivity -->
+            <section class="surface-panel" aria-labelledby="android-bridge-heading">
+              <div class="panel-header">
+                <div>
+                  <h2 id="android-bridge-heading" class="panel-title">
+                    Ponte Nativa Android (VpnService, AegisNativeVpn &amp; MainActivity)
+                  </h2>
+                  <p class="panel-subtitle">
+                    Sincronize automaticamente com <span class="mono">window.AegisNativeVpn</span> (e evento <span class="mono">aegis:native-vpn-state</span>) no WebView Android ou exporte <span class="mono">aegis-policy.json</span> e as classes Kotlin completas
+                  </p>
+                </div>
+                <div class="json-header-actions">
+                  <span id="android-bridge-live-badge" class="decision-label is-allowed">
+                    WebView: Aguardando Bridge
+                  </span>
+                  <span id="android-bridge-summary" class="meta-text mono tabular-nums">
+                    0 bloqueados · 0 allowlist
+                  </span>
+                  <button id="refresh-android-bridge-btn" type="button" class="btn btn-secondary btn-sm">
+                    Atualizar Bloco
+                  </button>
+                </div>
+              </div>
+
+              <div class="android-bridge-controls">
+                <div class="android-bridge-controls-copy">
+                  <span id="android-bridge-status-detail" class="meta-text">
+                    Interface JS <span class="mono">window.AegisNativeVpn</span> (compatível com <span class="mono">AegisVpnBridge</span>) + evento <span class="mono">aegis:native-vpn-state</span> aguardando WebView Android
+                  </span>
+                </div>
+                <div class="json-header-actions">
+                  <button id="android-bridge-start-btn" type="button" class="btn btn-primary btn-sm" disabled>
+                    Iniciar VPN com aegis-policy.json
+                  </button>
+                  <button id="android-bridge-sync-btn" type="button" class="btn btn-secondary btn-sm" disabled>
+                    Atualizar Políticas na VPN
+                  </button>
+                  <button id="android-bridge-stop-btn" type="button" class="btn btn-danger btn-sm" disabled>
+                    Parar VPN Android
+                  </button>
+                </div>
+              </div>
+
+              <div class="android-bridge-grid">
+                <div class="android-code-card">
+                  <div class="android-code-head">
+                    <div>
+                      <h3 class="sig-group-title">1. JSON de Políticas (<span class="mono">aegis-policy.json</span>)</h3>
+                      <p id="android-policy-meta" class="meta-text">
+                        Sincronizado em tempo real com o IndexedDB (Allowlist + Bloqueios)
+                      </p>
+                    </div>
+                    <div class="json-header-actions">
+                      <button id="copy-android-policy-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar JSON Android
+                      </button>
+                      <button id="download-android-policy-btn" type="button" class="btn btn-secondary btn-sm">
+                        Baixar .json
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="android-policy-json-preview"
+                    class="textarea mono android-code-textarea"
+                    rows="11"
+                    readonly
+                    aria-label="JSON de políticas pronto para o VpnService Android"
+                  ></textarea>
+                </div>
+
+                <div class="android-code-card">
+                  <div class="android-code-head">
+                    <div>
+                      <h3 class="sig-group-title">2. Serviço VPN (<span class="mono">AegisGuardVpnService.kt</span>)</h3>
+                      <p class="meta-text">
+                        Intercepta pacotes UDP/53 na TUN local, responde NXDOMAIN aos bloqueados e encaminha DNS seguros
+                      </p>
+                    </div>
+                    <div class="json-header-actions">
+                      <button id="copy-android-kotlin-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar Kotlin
+                      </button>
+                      <button id="download-android-kotlin-btn" type="button" class="btn btn-secondary btn-sm">
+                        Baixar .kt
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="android-kotlin-vpn-preview"
+                    class="textarea mono android-code-textarea"
+                    rows="11"
+                    readonly
+                    aria-label="Código Kotlin base de VpnService Android para AEGIS AI"
+                  ></textarea>
+                </div>
+
+                <div class="android-code-card">
+                  <div class="android-code-head">
+                    <div>
+                      <h3 class="sig-group-title">3. Ponte WebView ↔ Kotlin (<span class="mono">AegisVpnBridge.kt</span>)</h3>
+                      <p class="meta-text">
+                        Expõe <span class="mono">@JavascriptInterface</span> para gravar <span class="mono">aegis-policy.json</span>, atualizar regras em execução e sincronizar o estado da VPN no aparelho
+                      </p>
+                    </div>
+                    <div class="json-header-actions">
+                      <button id="copy-android-kotlin-bridge-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar Bridge Kotlin
+                      </button>
+                      <button id="download-android-kotlin-bridge-btn" type="button" class="btn btn-secondary btn-sm">
+                        Baixar AegisVpnBridge.kt
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="android-kotlin-bridge-preview"
+                    class="textarea mono android-code-textarea"
+                    rows="11"
+                    readonly
+                    aria-label="Código Kotlin da ponte JavascriptInterface AegisVpnBridge"
+                  ></textarea>
+                </div>
+
+                <div class="android-code-card">
+                  <div class="android-code-head">
+                    <div>
+                      <h3 class="sig-group-title">4. Activity Android + WebView (<span class="mono">MainActivity.kt</span>)</h3>
+                      <p class="meta-text">
+                        Carrega <span class="mono">file:///android_asset/index.html</span>, registra <span class="mono">AegisNativeVpn</span>, gerencia <span class="mono">VpnService.prepare</span> e emite <span class="mono">aegis:native-vpn-state</span>
+                      </p>
+                    </div>
+                    <div class="json-header-actions">
+                      <button id="copy-android-kotlin-main-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar MainActivity.kt
+                      </button>
+                      <button id="download-android-kotlin-main-btn" type="button" class="btn btn-secondary btn-sm">
+                        Baixar MainActivity.kt
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="android-kotlin-main-preview"
+                    class="textarea mono android-code-textarea"
+                    rows="11"
+                    readonly
+                    aria-label="Código Kotlin da MainActivity Android com WebView e VpnService"
+                  ></textarea>
+                </div>
+
+                <div class="android-code-card">
+                  <div class="android-code-head">
+                    <div>
+                      <h3 class="sig-group-title">5. Manifesto Android (<span class="mono">AndroidManifest.xml</span>)</h3>
+                      <p class="meta-text">
+                        Declara permissões de <span class="mono">BIND_VPN_SERVICE</span>, <span class="mono">FOREGROUND_SERVICE_SPECIAL_USE</span>, <span class="mono">POST_NOTIFICATIONS</span>, bloqueio de tráfego não cifrado e o serviço <span class="mono">.vpn.AegisGuardVpnService</span>
+                      </p>
+                    </div>
+                    <div class="json-header-actions">
+                      <button id="copy-android-manifest-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar AndroidManifest.xml
+                      </button>
+                      <button id="download-android-manifest-btn" type="button" class="btn btn-secondary btn-sm">
+                        Baixar AndroidManifest.xml
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="android-manifest-preview"
+                    class="textarea mono android-code-textarea"
+                    rows="11"
+                    readonly
+                    aria-label="Manifesto XML do app Android AEGIS AI"
+                  ></textarea>
+                </div>
+
+                <div class="android-code-card">
+                  <div class="android-code-head">
+                    <div>
+                      <h3 class="sig-group-title">6. Gradle do App (<span class="mono">build.gradle.kts</span>)</h3>
+                      <p class="meta-text">
+                        Configuração Kotlin DSL (<span class="mono">compileSdk 34</span>, <span class="mono">minSdk 24</span>, JVM 17, <span class="mono">core-ktx</span> e <span class="mono">activity-ktx</span>) alinhada à Build <span class="mono">2.4.0</span>
+                      </p>
+                    </div>
+                    <div class="json-header-actions">
+                      <button id="copy-android-gradle-btn" type="button" class="btn btn-primary btn-sm">
+                        Copiar build.gradle.kts
+                      </button>
+                      <button id="download-android-gradle-btn" type="button" class="btn btn-secondary btn-sm">
+                        Baixar build.gradle.kts
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    id="android-gradle-preview"
+                    class="textarea mono android-code-textarea"
+                    rows="11"
+                    readonly
+                    aria-label="Arquivo build.gradle.kts do módulo app Android"
+                  ></textarea>
                 </div>
               </div>
             </section>

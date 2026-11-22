@@ -8,6 +8,27 @@ import { computeNetworkRisk } from './risk.js';
 import { PIX_DONATION_KEY, buildPixCopyPaste } from './pix.js';
 import { renderQrToCanvas } from './qrcode.js';
 import { exportWeeklyReport } from './report.js';
+import {
+  ANDROID_GRADLE_KTS_CODE,
+  ANDROID_KOTLIN_MAINACTIVITY_CODE,
+  ANDROID_KOTLIN_VPNBRIDGE_CODE,
+  ANDROID_KOTLIN_VPNSERVICE_CODE,
+  ANDROID_MANIFEST_XML_CODE,
+  FREE_OPEN_BLOCKLISTS,
+  buildAndroidVpnPolicyBundle,
+  fetchPublicBlocklist,
+  importBlocklistBatch,
+  parseBlocklistText,
+  undoLastBulkImport,
+  validatePublicListUrl,
+} from './blocklists.js';
+import {
+  getAndroidVpnBridgeStatus,
+  getNativeVpnBridgeName,
+  startNativeVpnWithPolicy,
+  stopNativeVpn,
+  updateNativeVpnPolicy,
+} from './vpnBridge.js';
 
 const SCREEN_TITLES = {
   shield: 'Escudo Global',
@@ -62,13 +83,22 @@ function formatTime(ts) {
 }
 
 export class AegisApp {
-  constructor(storage, engine, visualizer, audio, telemetry, backgroundMonitor = null) {
+  constructor(
+    storage,
+    engine,
+    visualizer,
+    audio,
+    telemetry,
+    backgroundMonitor = null,
+    pushManager = null
+  ) {
     this.storage = storage;
     this.engine = engine;
     this.visualizer = visualizer;
     this.audio = audio;
     this.telemetry = telemetry;
     this.backgroundMonitor = backgroundMonitor;
+    this.pushManager = pushManager;
 
     this.state = {
       activeScreen: 'shield',
@@ -78,6 +108,8 @@ export class AegisApp {
       logSearch: '',
       ruleFilterType: 'all',
       ruleSearch: '',
+      ruleRenderLimit: 150,
+      selectedBulkPreset: FREE_OPEN_BLOCKLISTS[0].id,
       importMode: 'merge',
       settings: null,
       rules: [],
@@ -88,21 +120,103 @@ export class AegisApp {
       activeRedAlertId: null,
       risk: null,
       sensorChecklist: {},
+      lastBulkBatch: null,
+      isOnline: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
     };
     this._riskDecayTimer = null;
+    this._cachedAndroidFullPolicyJson = '';
+    this._pendingNativeVpnPermission = false;
+  }
+
+  _handleConnectivityChange(isOnline) {
+    const nextOnline = Boolean(isOnline);
+    const changed = this.state.isOnline !== nextOnline;
+    this.state.isOnline = nextOnline;
+    this.engine?.setOnline?.(nextOnline);
+    this.visualizer?.setOnline?.(nextOnline);
+    this.telemetry?.setOnline?.(nextOnline);
+    this.backgroundMonitor?.notifyOnlineChange?.(nextOnline);
+    this.render();
+    if (changed) {
+      this.showToast(
+        nextOnline
+          ? 'Conexão de rede restaurada. Escudo pronto para inspeções externas.'
+          : 'Sem internet (offline). Varredura externa pausada até o retorno da rede.',
+        nextOnline ? 'success' : 'warn'
+      );
+    }
   }
 
   async mount() {
     this._bindEvents();
     await this.refreshAll();
+    const initialOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    this.state.isOnline = initialOnline;
+    this.engine?.setOnline?.(initialOnline);
     this.visualizer.setActive(Boolean(this.state.settings.vpnActive));
+    this.visualizer?.setOnline?.(initialOnline);
     this.visualizer.start();
     this.telemetry?.setActive(Boolean(this.state.settings.vpnActive));
+    this.telemetry?.setOnline?.(initialOnline);
     this.engine.startBackgroundLoop(Boolean(this.state.settings.vpnActive));
+
+    this.backgroundMonitor?.setOnCycleTick?.((metrics) => {
+      this._renderBackgroundCyclicTelemetry(metrics);
+    });
 
     await this._reconcileBackgroundResume();
     await this._syncBackgroundService();
     await this._refreshBatteryOptimizationUi();
+    await this._renderPushUi();
+    this._renderBackgroundCyclicTelemetry();
+
+    const bulkUrlInput = document.getElementById('bulk-list-url-input');
+    if (bulkUrlInput && !bulkUrlInput.value) {
+      bulkUrlInput.value = FREE_OPEN_BLOCKLISTS[0].url;
+    }
+    const kotlinPreview = document.getElementById('android-kotlin-vpn-preview');
+    if (kotlinPreview) {
+      kotlinPreview.value = ANDROID_KOTLIN_VPNSERVICE_CODE;
+    }
+    const bridgePreview = document.getElementById('android-kotlin-bridge-preview');
+    if (bridgePreview) {
+      bridgePreview.value = ANDROID_KOTLIN_VPNBRIDGE_CODE;
+    }
+    const mainPreview = document.getElementById('android-kotlin-main-preview');
+    if (mainPreview) {
+      mainPreview.value = ANDROID_KOTLIN_MAINACTIVITY_CODE;
+    }
+    const manifestPreview = document.getElementById('android-manifest-preview');
+    if (manifestPreview) {
+      manifestPreview.value = ANDROID_MANIFEST_XML_CODE;
+    }
+    const gradlePreview = document.getElementById('android-gradle-preview');
+    if (gradlePreview) {
+      gradlePreview.value = ANDROID_GRADLE_KTS_CODE;
+    }
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const launchScreen = params.get('screen');
+      if (launchScreen && SCREEN_TITLES[launchScreen]) {
+        this.setScreen(launchScreen);
+      }
+    } catch {
+      // Ignore malformed launch query params
+    }
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'AEGIS_OPEN_THREAT') {
+          const targetScreen = event.data.screen || 'logs';
+          this.setScreen(targetScreen);
+          this.refreshAll();
+          if (event.data.domain) {
+            this.showToast(`Inspecionando ameaça crítica: ${event.data.domain}`, 'danger');
+          }
+        }
+      });
+    }
 
     if (this._riskDecayTimer !== null) {
       window.clearInterval(this._riskDecayTimer);
@@ -112,19 +226,118 @@ export class AegisApp {
       this._renderRiskScore();
     }, 1_000);
 
+    window.addEventListener('online', () => {
+      this._handleConnectivityChange(true);
+    });
+    window.addEventListener('offline', () => {
+      this._handleConnectivityChange(false);
+    });
+
+    const handleEnterHidden = (lifecycleState = 'hidden') => {
+      this.backgroundMonitor?.notifyVisibilityChange?.('hidden', lifecycleState);
+      if (this.state.settings?.vpnActive && this.state.settings?.backgroundMode !== false) {
+        this.backgroundMonitor?.markHeartbeatTimestamp();
+        this._syncBackgroundService();
+      }
+    };
+
+    const handleReturnVisible = (lifecycleState = 'active') => {
+      this.backgroundMonitor?.notifyVisibilityChange?.('visible', lifecycleState);
+      const currentOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+      if (currentOnline !== this.state.isOnline) {
+        this._handleConnectivityChange(currentOnline);
+      }
+      this._reconcileBackgroundResume();
+    };
+
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
-        if (this.state.settings?.vpnActive && this.state.settings?.backgroundMode !== false) {
-          this.backgroundMonitor?.markHeartbeatTimestamp();
-          this._syncBackgroundService();
-        }
+        handleEnterHidden('hidden');
       } else if (document.visibilityState === 'visible') {
-        this._reconcileBackgroundResume();
+        handleReturnVisible('active');
       }
     });
 
+    window.addEventListener('pagehide', () => {
+      handleEnterHidden('pagehide');
+    });
+
+    window.addEventListener('pageshow', (event) => {
+      if (document.visibilityState === 'visible' || event.persisted) {
+        handleReturnVisible(event.persisted ? 'bfcache_restore' : 'active');
+      }
+    });
+
+    document.addEventListener('freeze', () => {
+      handleEnterHidden('frozen');
+    });
+
+    document.addEventListener('resume', () => {
+      handleReturnVisible('resumed');
+    });
+
     window.addEventListener('focus', () => {
-      this._reconcileBackgroundResume();
+      if (document.visibilityState === 'visible') {
+        handleReturnVisible('focused');
+      }
+    });
+
+    window.addEventListener('aegis:native-vpn-state', async (event) => {
+      const detail = event?.detail || {};
+      const running = Boolean(detail.running);
+      const permissionDenied = Boolean(detail.permissionDenied);
+
+      if (permissionDenied) {
+        this._pendingNativeVpnPermission = false;
+        const current = this.state.settings || (await this.storage.getSettings());
+        if (current.vpnActive) {
+          this.state.settings = await this.storage.saveSettings({
+            ...current,
+            vpnActive: false,
+          });
+          this.visualizer.setActive(false);
+          this.telemetry?.setActive(false);
+          this.engine.startBackgroundLoop(false);
+          await this._syncBackgroundService();
+        }
+        this.render();
+        this._syncRedAlertState();
+        this.showToast(
+          'Permissão de VPN negada no Android. Vigilância VPN pausada.',
+          'warn'
+        );
+        return;
+      }
+
+      if (running) {
+        const wasPending = this._pendingNativeVpnPermission;
+        const wasInactive = !this.state.settings?.vpnActive;
+        this._pendingNativeVpnPermission = false;
+        if (wasInactive) {
+          const current = this.state.settings || (await this.storage.getSettings());
+          this.state.settings = await this.storage.saveSettings({
+            ...current,
+            vpnActive: true,
+          });
+          this.visualizer.setActive(true);
+          this.telemetry?.setActive(true);
+          this.engine.startBackgroundLoop(true);
+          await this._syncBackgroundService();
+        }
+        this.render();
+        this._syncRedAlertState();
+        if (wasPending || wasInactive) {
+          this.showToast(
+            'Túnel VPN Android (AegisGuardVpnService) ativo e sincronizado.',
+            'success'
+          );
+        }
+        return;
+      }
+
+      this._pendingNativeVpnPermission = false;
+      this.render();
+      this._syncRedAlertState();
     });
   }
 
@@ -194,10 +407,10 @@ export class AegisApp {
           return;
         }
 
-        if (result.cyclesProcessed > 0 || result.networkEvents > 0) {
+        if (result.networkEvents > 0) {
           await this.refreshAll();
           this.showToast(
-            `Modo Oculto ativo (~${result.elapsedMinutes} min): ${result.cyclesProcessed} ciclos monitorados em 2º plano.`,
+            `Modo Oculto ativo (~${result.elapsedMinutes} min): ${result.networkEvents} troca(s) real(is) de rede registrada(s).`,
             'info'
           );
         }
@@ -207,14 +420,16 @@ export class AegisApp {
   }
 
   async refreshAll() {
-    const [settings, rules, signatures, logs, alerts, checklistState] = await Promise.all([
-      this.storage.getSettings(),
-      this.storage.getAll('rules'),
-      this.storage.getAll('signatures'),
-      this.storage.getAll('logs'),
-      this.storage.getAll('alerts'),
-      this.storage.getSensorChecklist(),
-    ]);
+    const [settings, rules, signatures, logs, alerts, checklistState, lastBulkBatch] =
+      await Promise.all([
+        this.storage.getSettings(),
+        this.storage.getAll('rules'),
+        this.storage.getAll('signatures'),
+        this.storage.getAll('logs'),
+        this.storage.getAll('alerts'),
+        this.storage.getSensorChecklist(),
+        this.storage.getLastBulkImportBatch(),
+      ]);
 
     logs.sort((a, b) => b.timestamp - a.timestamp);
     alerts.sort((a, b) => b.timestamp - a.timestamp);
@@ -226,6 +441,7 @@ export class AegisApp {
     this.state.logs = logs;
     this.state.alerts = alerts;
     this.state.sensorChecklist = checklistState?.checks || {};
+    this.state.lastBulkBatch = lastBulkBatch || null;
     this.state.risk = computeNetworkRisk({ settings, logs, alerts });
 
     if (logs.length > 0 && !this.state.lastRadarLog) {
@@ -238,8 +454,25 @@ export class AegisApp {
 
     this.storage.saveRiskSnapshot(this.state.risk).catch(() => {});
 
+    this._syncNativeAndroidVpnPolicyIfRunning();
     this.render();
     this._syncRedAlertState();
+  }
+
+  _buildFullAndroidPolicyJson() {
+    const bundle = buildAndroidVpnPolicyBundle({
+      settings: this.state.settings || {},
+      rules: this.state.rules || [],
+    });
+    return JSON.stringify(bundle, null, 2);
+  }
+
+  _syncNativeAndroidVpnPolicyIfRunning() {
+    const bridgeStatus = getAndroidVpnBridgeStatus();
+    if (!bridgeStatus.available || !bridgeStatus.running) return null;
+    if (!this.state.settings?.vpnActive) return null;
+    const json = this._buildFullAndroidPolicyJson();
+    return updateNativeVpnPolicy(json);
   }
 
   setScreen(screenName) {
@@ -363,6 +596,17 @@ export class AegisApp {
     this.telemetry?.setActive(nextActive);
     this.engine.startBackgroundLoop(nextActive);
     await this._syncBackgroundService();
+
+    if (nextActive) {
+      const nativeRes = startNativeVpnWithPolicy(this._buildFullAndroidPolicyJson());
+      this._pendingNativeVpnPermission = Boolean(
+        nativeRes.available && nativeRes.ok && nativeRes.pendingPermission
+      );
+    } else {
+      this._pendingNativeVpnPermission = false;
+      stopNativeVpn();
+    }
+
     this.render();
     this._syncRedAlertState();
     this.storage.saveRiskSnapshot(this.state.risk).catch(() => {});
@@ -479,6 +723,10 @@ export class AegisApp {
       this._syncRiskPanelCriticalPulse();
       return;
     }
+
+    this.pushManager
+      ?.notifyCriticalFromAlerts(this.state.alerts, this.state.settings)
+      .catch(() => {});
 
     const activeRedAlert = this.state.alerts.find(
       (a) =>
@@ -739,13 +987,134 @@ export class AegisApp {
     this._syncRiskPanelCriticalPulse();
   }
 
+  _renderBackgroundCyclicTelemetry(explicitMetrics = null) {
+    const metrics = explicitMetrics || this.backgroundMonitor?.getMetrics?.();
+    if (!metrics) return;
+
+    const countEl = document.getElementById('bg-cyclic-count');
+    const precisionEl = document.getElementById('bg-cyclic-precision');
+    const visEl = document.getElementById('bg-visibility-state');
+    const hiddenEl = document.getElementById('bg-hidden-duration');
+
+    if (countEl) {
+      const workerTag = metrics.workerActive ? ' · IDB' : '';
+      countEl.textContent = `${metrics.cycleCount || 0}${workerTag}`;
+    }
+
+    if (precisionEl) {
+      const drift = Number(metrics.lastDriftMs) || 0;
+      const sign = drift >= 0 ? '+' : '';
+      const lockSuffix = metrics.webLockHeld ? ' · Lock' : '';
+      precisionEl.textContent = `${sign}${drift} ms${lockSuffix}`;
+    }
+
+    if (visEl) {
+      const isPaused = metrics.status === 'paused';
+      if (isPaused) {
+        visEl.textContent = 'Pausado';
+      } else if (metrics.visibilityState === 'hidden') {
+        visEl.textContent = `Oculto (${metrics.lifecycleState || 'hidden'})`;
+      } else {
+        visEl.textContent = 'Visível (Ativo)';
+      }
+    }
+
+    if (hiddenEl) {
+      const totalSecs = Math.floor((Number(metrics.hiddenDurationMs) || 0) / 1000);
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
+      const timeLabel = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      const hiddenCycles = Number(metrics.hiddenCycles) || 0;
+      hiddenEl.textContent = `${timeLabel} · ${hiddenCycles} ocultos`;
+    }
+  }
+
+  async _renderPushUi() {
+    if (!this.pushManager) return;
+    const box = document.getElementById('push-alerts-box');
+    const badge = document.getElementById('push-status-badge');
+    const desc = document.getElementById('push-status-desc');
+    const enableBtn = document.getElementById('push-enable-btn');
+    const testBtn = document.getElementById('push-test-btn');
+    const vapidInput = document.getElementById('push-vapid-input');
+    const metaEl = document.getElementById('push-subscription-meta');
+
+    let status;
+    try {
+      status = await this.pushManager.getStatus();
+    } catch {
+      return;
+    }
+
+    if (box) {
+      box.classList.toggle('is-enabled', Boolean(status.enabled));
+    }
+
+    if (badge) {
+      badge.classList.remove('is-active', 'is-danger');
+      if (!status.supported) {
+        badge.textContent = 'Indisponível';
+      } else if (status.permission === 'denied') {
+        badge.textContent = 'Bloqueado';
+        badge.classList.add('is-danger');
+      } else if (status.enabled) {
+        badge.textContent = 'Ativo · Somente Crítico';
+        badge.classList.add('is-active');
+      } else {
+        badge.textContent = 'Desativado';
+      }
+    }
+
+    if (desc) {
+      if (status.permission === 'denied') {
+        desc.innerHTML =
+          'Permissão de notificações bloqueada no navegador. Libere notificações nas configurações do site para receber alertas de nível <strong>Crítico</strong> em 2º plano.';
+      } else {
+        desc.innerHTML =
+          'Receba notificações no aparelho apenas para ameaças de nível <strong>Crítico</strong>, mesmo com o navegador minimizado ou fechado em 2º plano.';
+      }
+    }
+
+    if (enableBtn) {
+      enableBtn.disabled = !status.supported;
+      enableBtn.textContent = status.enabled ? 'Desativar Push Crítico' : 'Ativar Push Crítico';
+      enableBtn.classList.toggle('btn-primary', !status.enabled);
+      enableBtn.classList.toggle('btn-secondary', status.enabled);
+    }
+
+    if (testBtn) {
+      testBtn.disabled = !status.supported || status.permission === 'denied';
+    }
+
+    if (vapidInput && document.activeElement !== vapidInput) {
+      vapidInput.value = status.vapidPublicKey || '';
+    }
+
+    if (metaEl) {
+      if (!status.enabled) {
+        metaEl.textContent = 'Modo: Desativado · Somente ameaças críticas disparam Web Push';
+      } else if (status.mode === 'web_push_vapid') {
+        metaEl.textContent = 'Modo: Web Push VAPID (endpoint PushManager ativo)';
+      } else if (status.mode === 'android_native_channel') {
+        metaEl.textContent = 'Modo: Canal Nativo Android (IMPORTANCE_HIGH · Crítico)';
+      } else {
+        metaEl.textContent = 'Modo: Service Worker Push Local + PushManager pronto';
+      }
+    }
+  }
+
   _renderShieldScreen() {
     this._renderRiskScore();
     const { settings, rules, logs, alerts, lastRadarLog } = this.state;
     const isActive = Boolean(settings.vpnActive);
+    const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    this.state.isOnline = isOnline;
 
     const indicator = document.getElementById('vpn-status-indicator');
     const statusText = document.getElementById('vpn-status-text');
+    const netOnlineIndicator = document.getElementById('network-online-indicator');
+    const netOnlineText = document.getElementById('network-online-text');
+    const offlineBanner = document.getElementById('offline-network-banner');
     const heroToggleBtn = document.getElementById('hero-vpn-toggle-btn');
     const heroToggleLabel = document.getElementById('hero-vpn-toggle-label');
     const threatTextEl = document.getElementById('threat-level-text');
@@ -754,6 +1123,16 @@ export class AegisApp {
       indicator.classList.toggle('is-active', isActive);
       indicator.classList.toggle('is-paused', !isActive);
       statusText.textContent = isActive ? 'Vigilância VPN Ativa' : 'Vigilância VPN Pausada';
+    }
+
+    if (netOnlineIndicator && netOnlineText) {
+      netOnlineIndicator.classList.toggle('is-online', isOnline);
+      netOnlineIndicator.classList.toggle('is-offline', !isOnline);
+      netOnlineText.textContent = isOnline ? 'Rede Online' : 'Sem Internet (Offline)';
+    }
+
+    if (offlineBanner) {
+      offlineBanner.hidden = isOnline;
     }
 
     if (heroToggleBtn && heroToggleLabel) {
@@ -772,6 +1151,9 @@ export class AegisApp {
       if (!isActive) {
         threatTextEl.textContent = 'Ameaça de Rede: Exposição Alta (Escudo Pausado)';
         threatTextEl.classList.add('is-critical');
+      } else if (!isOnline) {
+        threatTextEl.textContent = 'Rede Local Offline · Varredura Externa Pausada';
+        threatTextEl.classList.add('is-elevated');
       } else if (hasDnsHijackAlert) {
         threatTextEl.textContent = 'Ameaça de Rede: Crítica · Sequestro DNS Contido';
         threatTextEl.classList.add('is-critical');
@@ -810,20 +1192,27 @@ export class AegisApp {
         bgBadge.textContent = 'Aguardando escudo';
       }
     }
+    this._renderBackgroundCyclicTelemetry();
+    this._renderPushUi();
 
     const radarCaption = document.getElementById('radar-last-event');
     if (radarCaption) {
       if (!isActive) {
         radarCaption.innerHTML =
           '<span class="mono">Radar em pausa · ative a vigilância para interceptar</span>';
+      } else if (!isOnline) {
+        radarCaption.innerHTML =
+          '<span class="mono">Sem internet (offline) · sem tráfego externo ativo (sem simulação)</span>';
       } else if (lastRadarLog) {
         const badge = lastRadarLog.action === 'blocked' ? 'BARRADO' : 'SEGURO';
+        const latencySuffix =
+          typeof lastRadarLog.latencyMs === 'number' ? ` · ${lastRadarLog.latencyMs} ms` : '';
         radarCaption.innerHTML = `<span class="mono">${escapeHtml(badge)} · ${escapeHtml(
           lastRadarLog.domain
-        )}</span>`;
+        )}${escapeHtml(latencySuffix)}</span>`;
       } else {
         radarCaption.innerHTML =
-          '<span class="mono">Aguardando próxima varredura...</span>';
+          '<span class="mono">Escudo online · pronto para inspeção sob demanda</span>';
       }
     }
 
@@ -880,11 +1269,21 @@ export class AegisApp {
 
     // Network status panel
     const presetInfo = DNS_PRESETS[settings.dnsPreset] || DNS_PRESETS.custom;
-    document.getElementById('net-tunnel-state').textContent = isActive
+    document.getElementById('net-tunnel-state').textContent = !isActive
+      ? 'Pausada · Sem inspeção ativa'
+      : isOnline
       ? 'Ativa · Escudo global operando'
-      : 'Pausada · Sem inspeção ativa';
+      : 'Ativa · Varredura externa aguardando rede';
+    const connectivityEl = document.getElementById('net-connectivity-state');
+    if (connectivityEl) {
+      connectivityEl.textContent = isOnline
+        ? 'Online · Inspeção externa habilitada'
+        : 'Offline · Sem conexão externa (pausada)';
+    }
     document.getElementById('net-threat-level').textContent = !isActive
       ? 'Crítico · Vigilância desativada'
+      : !isOnline
+      ? 'Offline · Sem tráfego externo ativo'
       : hasDnsHijackAlert
       ? 'Crítico · Sequestro DNS Wi-Fi contido'
       : hasCriticalAlert
@@ -940,6 +1339,12 @@ export class AegisApp {
   }
 
   _renderLogsScreen() {
+    const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    const logsOfflineBanner = document.getElementById('logs-offline-banner');
+    if (logsOfflineBanner) {
+      logsOfflineBanner.hidden = isOnline;
+    }
+
     const alertsContainer = document.getElementById('alerts-list');
     if (alertsContainer) {
       if (this.state.alerts.length === 0) {
@@ -1278,6 +1683,40 @@ export class AegisApp {
       summaryEl.textContent = `${blockedCount} bloqueado(s) · ${allowCount} na allowlist`;
     }
 
+    const bulkCount = rules.filter((r) => typeof r.source === 'string' && r.source.length > 0).length;
+    const bulkBadge = document.getElementById('bulk-rules-count-badge');
+    if (bulkBadge) {
+      bulkBadge.textContent = `${bulkCount} importada(s) em massa`;
+    }
+
+    const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    const bulkUrlBtn = document.getElementById('bulk-import-url-btn');
+    const bulkUrlOfflineNote = document.getElementById('bulk-url-offline-note');
+    if (bulkUrlOfflineNote) {
+      bulkUrlOfflineNote.hidden = isOnline;
+    }
+    if (bulkUrlBtn) {
+      bulkUrlBtn.disabled = !isOnline;
+    }
+
+    const undoBtn = document.getElementById('bulk-undo-btn');
+    if (undoBtn) {
+      const addedLen = this.state.lastBulkBatch?.addedIds?.length || 0;
+      const restoredLen = this.state.lastBulkBatch?.updatedBackups?.length || 0;
+      const canUndo = addedLen > 0 || restoredLen > 0;
+      undoBtn.disabled = !canUndo;
+      undoBtn.textContent = addedLen > 0
+        ? `Desfazer Última Importação (${addedLen})`
+        : 'Desfazer Última Importação';
+    }
+
+    document.querySelectorAll('[data-bulk-preset]').forEach((btn) => {
+      btn.classList.toggle(
+        'is-selected',
+        btn.getAttribute('data-bulk-preset') === this.state.selectedBulkPreset
+      );
+    });
+
     const query = this.state.ruleSearch.trim().toLowerCase();
     const filteredRules = rules.filter((r) => {
       if (this.state.ruleFilterType !== 'all' && r.type !== this.state.ruleFilterType) {
@@ -1289,13 +1728,16 @@ export class AegisApp {
       return true;
     });
 
+    const limit = Math.max(150, Number(this.state.ruleRenderLimit) || 150);
+    const visibleRules = filteredRules.slice(0, limit);
+
     const tbody = document.getElementById('rules-tbody');
     if (tbody) {
-      if (filteredRules.length === 0) {
+      if (visibleRules.length === 0) {
         tbody.innerHTML =
           '<tr><td colspan="6" class="meta-text">Nenhuma regra encontrada.</td></tr>';
       } else {
-        tbody.innerHTML = filteredRules
+        tbody.innerHTML = visibleRules
           .map((rule) => {
             const isBlock = rule.type === 'block';
             return `
@@ -1344,6 +1786,116 @@ export class AegisApp {
           .join('');
       }
     }
+
+    const paginationRow = document.getElementById('rules-pagination-row');
+    const showingText = document.getElementById('rules-showing-text');
+    const loadMoreBtn = document.getElementById('rules-load-more-btn');
+    if (paginationRow && showingText) {
+      const hasMore = filteredRules.length > visibleRules.length;
+      paginationRow.hidden = !hasMore && filteredRules.length <= 150;
+      showingText.textContent = `Exibindo ${visibleRules.length} de ${filteredRules.length} regra(s)`;
+      if (loadMoreBtn) {
+        loadMoreBtn.hidden = !hasMore;
+      }
+    }
+
+    this._renderAndroidBridgePanel();
+  }
+
+  _renderAndroidBridgePanel() {
+    const settings = this.state.settings || {};
+    const rules = this.state.rules || [];
+
+    const fullBundle = buildAndroidVpnPolicyBundle({ settings, rules });
+    this._cachedAndroidFullPolicyJson = JSON.stringify(fullBundle, null, 2);
+
+    const previewBundle = buildAndroidVpnPolicyBundle({
+      settings,
+      rules,
+      maxPreviewDomains: 1200,
+    });
+
+    const summaryEl = document.getElementById('android-bridge-summary');
+    if (summaryEl) {
+      summaryEl.textContent = `${fullBundle.stats.totalBlockedDomains} bloqueado(s) · ${fullBundle.stats.totalAllowlist} allowlist`;
+    }
+
+    const metaEl = document.getElementById('android-policy-meta');
+    if (metaEl) {
+      metaEl.textContent = previewBundle.stats.previewTruncated
+        ? `Exibindo amostra de 1.200 domínios no bloco visual; Copiar/Baixar inclui todos os ${fullBundle.stats.totalBlockedDomains} domínios`
+        : `Sincronizado com o IndexedDB (${fullBundle.stats.totalBlockedDomains} bloqueados · ${fullBundle.stats.totalAllowlist} allowlist)`;
+    }
+
+    const policyTextarea = document.getElementById('android-policy-json-preview');
+    if (policyTextarea && document.activeElement !== policyTextarea) {
+      policyTextarea.value = JSON.stringify(previewBundle, null, 2);
+    }
+
+    const kotlinTextarea = document.getElementById('android-kotlin-vpn-preview');
+    if (kotlinTextarea && !kotlinTextarea.value) {
+      kotlinTextarea.value = ANDROID_KOTLIN_VPNSERVICE_CODE;
+    }
+
+    const bridgeTextarea = document.getElementById('android-kotlin-bridge-preview');
+    if (bridgeTextarea && !bridgeTextarea.value) {
+      bridgeTextarea.value = ANDROID_KOTLIN_VPNBRIDGE_CODE;
+    }
+
+    const mainTextarea = document.getElementById('android-kotlin-main-preview');
+    if (mainTextarea && !mainTextarea.value) {
+      mainTextarea.value = ANDROID_KOTLIN_MAINACTIVITY_CODE;
+    }
+
+    const manifestTextarea = document.getElementById('android-manifest-preview');
+    if (manifestTextarea && !manifestTextarea.value) {
+      manifestTextarea.value = ANDROID_MANIFEST_XML_CODE;
+    }
+
+    const gradleTextarea = document.getElementById('android-gradle-preview');
+    if (gradleTextarea && !gradleTextarea.value) {
+      gradleTextarea.value = ANDROID_GRADLE_KTS_CODE;
+    }
+
+    const bridgeStatus = getAndroidVpnBridgeStatus();
+    const bridgeName = bridgeStatus.bridgeName || getNativeVpnBridgeName();
+    const liveBadge = document.getElementById('android-bridge-live-badge');
+    const detailEl = document.getElementById('android-bridge-status-detail');
+    const startBtn = document.getElementById('android-bridge-start-btn');
+    const syncBtn = document.getElementById('android-bridge-sync-btn');
+    const stopBtn = document.getElementById('android-bridge-stop-btn');
+
+    if (liveBadge) {
+      liveBadge.className = `decision-label ${
+        !bridgeStatus.available
+          ? 'is-allowed'
+          : bridgeStatus.running
+          ? 'is-allowed'
+          : 'is-blocked'
+      }`;
+      liveBadge.textContent = !bridgeStatus.available
+        ? 'WebView: Aguardando Bridge'
+        : bridgeStatus.running
+        ? 'Bridge Ativa · VPN Ligada'
+        : 'Bridge Pronta · VPN Parada';
+    }
+
+    if (detailEl) {
+      if (!bridgeStatus.available) {
+        detailEl.innerHTML =
+          'Interface JS <span class="mono">window.AegisNativeVpn</span> (compatível com <span class="mono">AegisVpnBridge</span>) + evento <span class="mono">aegis:native-vpn-state</span> aguardando WebView Android';
+      } else {
+        detailEl.textContent = `${bridgeName} conectada · VPN ${
+          bridgeStatus.running ? 'em execução' : 'parada'
+        } · arquivo aegis-policy.json ${
+          bridgeStatus.hasPolicyFile ? 'gravado no aparelho' : 'ainda não gravado'
+        }.`;
+      }
+    }
+
+    if (startBtn) startBtn.disabled = !bridgeStatus.available;
+    if (syncBtn) syncBtn.disabled = !bridgeStatus.available;
+    if (stopBtn) stopBtn.disabled = !bridgeStatus.available || !bridgeStatus.running;
   }
 
   _openMobileSidebar() {
@@ -1423,6 +1975,84 @@ export class AegisApp {
     });
     document.getElementById('bg-battery-opt-btn')?.addEventListener('click', async () => {
       await this.backgroundMonitor?.requestBatteryOptimizationExemption();
+    });
+
+    document.getElementById('push-enable-btn')?.addEventListener('click', async () => {
+      if (!this.pushManager) return;
+      try {
+        const currentStatus = await this.pushManager.getStatus();
+        if (currentStatus.enabled) {
+          await this.pushManager.disable();
+          this.state.settings = await this.storage.getSettings();
+          await this._renderPushUi();
+          this.showToast('Notificações Web Push de nível Crítico desativadas.', 'info');
+        } else {
+          const vapidVal = document.getElementById('push-vapid-input')?.value || '';
+          const nextStatus = await this.pushManager.enable({ vapidPublicKey: vapidVal });
+          this.state.settings = await this.storage.getSettings();
+          await this._renderPushUi();
+          this.showToast(
+            nextStatus.hasRemoteSubscription
+              ? 'Web Push VAPID ativado para ameaças críticas em 2º plano.'
+              : 'Push Crítico ativado via Service Worker para 2º plano.',
+            'success'
+          );
+        }
+      } catch (err) {
+        await this._renderPushUi();
+        this.showToast(err?.message || 'Não foi possível ativar as notificações.', 'danger');
+      }
+    });
+
+    document.getElementById('push-test-btn')?.addEventListener('click', async () => {
+      if (!this.pushManager) return;
+      try {
+        let status = await this.pushManager.getStatus();
+        if (!status.enabled) {
+          const vapidVal = document.getElementById('push-vapid-input')?.value || '';
+          status = await this.pushManager.enable({ vapidPublicKey: vapidVal });
+          this.state.settings = await this.storage.getSettings();
+          await this._renderPushUi();
+        }
+        const res = await this.pushManager.notifyCriticalThreat({
+          alertId: `test_critical_${Date.now()}`,
+          domain: 'teste-critico.aegis.local',
+          type: 'bot_pattern',
+          severity: 'critical',
+          body: 'Simulação de ameaça Crítica detectada pelo motor heurístico com o app em 2º plano.',
+          forceTest: true,
+        });
+        if (res.sent) {
+          this.showToast('Notificação Web Push Crítica enviada ao dispositivo.', 'success');
+        } else {
+          this.showToast(
+            'Não foi possível exibir a notificação. Verifique as permissões do navegador.',
+            'warn'
+          );
+        }
+      } catch (err) {
+        await this._renderPushUi();
+        this.showToast(err?.message || 'Erro ao testar Web Push Crítico.', 'danger');
+      }
+    });
+
+    document.getElementById('push-vapid-save-btn')?.addEventListener('click', async () => {
+      if (!this.pushManager) return;
+      const vapidVal = document.getElementById('push-vapid-input')?.value?.trim() || '';
+      try {
+        const status = await this.pushManager.enable({ vapidPublicKey: vapidVal });
+        this.state.settings = await this.storage.getSettings();
+        await this._renderPushUi();
+        this.showToast(
+          status.hasRemoteSubscription
+            ? 'Assinatura VAPID registrada no PushManager com sucesso.'
+            : 'Push Crítico ativo no modo Service Worker local (sem VAPID).',
+          'success'
+        );
+      } catch (err) {
+        await this._renderPushUi();
+        this.showToast(err?.message || 'Chave VAPID inválida ou permissão negada.', 'danger');
+      }
     });
 
     document.getElementById('copy-pix-key-btn')?.addEventListener('click', () => {
@@ -1713,21 +2343,53 @@ export class AegisApp {
       e.preventDefault();
       const inputEl = document.getElementById('manual-probe-input');
       const boxEl = document.getElementById('probe-result-box');
+      const submitBtn = document.getElementById('manual-probe-submit-btn');
       const rawValue = inputEl.value.trim();
       if (!rawValue) return;
 
-      const result = await this.engine.processRequest(rawValue, null, null, {
-        forceEvaluate: true,
-      });
-      await this.refreshAll();
+      const prevBtnText = submitBtn ? submitBtn.textContent : 'Inspecionar';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = navigator.onLine === false ? 'Avaliando...' : 'Sondando...';
+      }
+
+      let result = null;
+      try {
+        result = await this.engine.inspectDomainManually(rawValue);
+        await this.refreshAll();
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = prevBtnText;
+        }
+      }
 
       if (result && boxEl) {
-        const { logEntry, anomalyTriggered } = result;
+        const { logEntry, anomalyTriggered, probe } = result;
         const isBlocked = logEntry.action === 'blocked';
         const sev = logEntry.severity || 'low';
+        const probeStatus = probe?.status || logEntry.probeStatus || 'offline';
+        const latencyMs = probe?.latencyMs ?? logEntry.latencyMs;
+
+        let probeLabel = 'Offline · Sem conexão';
+        let probeClass = 'is-offline';
+        if (probeStatus === 'blocked_locally') {
+          probeLabel = 'Bloqueado antes da rede · 0 ms';
+          probeClass = 'is-unreachable';
+        } else if (probeStatus === 'reachable') {
+          probeLabel = `Alcançável · ${latencyMs} ms`;
+          probeClass = 'is-reachable';
+        } else if (probeStatus === 'timeout') {
+          probeLabel = `Timeout · ${latencyMs} ms`;
+          probeClass = 'is-timeout';
+        } else if (probeStatus === 'unreachable') {
+          probeLabel = `Falha DNS/Rede · ${latencyMs} ms`;
+          probeClass = 'is-unreachable';
+        }
+
         boxEl.hidden = false;
         boxEl.innerHTML = `
-          <div>
+          <div class="probe-result-row">
             <strong>Decisão:</strong>
             <span class="decision-label ${isBlocked ? 'is-blocked' : 'is-allowed'}">
               ${isBlocked ? 'Barrado' : 'Permitido'}
@@ -1736,6 +2398,8 @@ export class AegisApp {
             <span class="sev-text sev-${escapeHtml(sev)}">Severidade ${escapeHtml(
           SEVERITY_LABELS[sev] || sev
         )}</span>
+            <span class="meta-sep">·</span>
+            <span class="probe-status-badge ${escapeHtml(probeClass)}">${escapeHtml(probeLabel)}</span>
             <span class="meta-sep">·</span>
             <span class="mono">${escapeHtml(logEntry.domain)}</span>
           </div>
@@ -1817,12 +2481,19 @@ export class AegisApp {
         document.querySelectorAll('[data-rule-filter]').forEach((b) => b.classList.remove('is-active'));
         btn.classList.add('is-active');
         this.state.ruleFilterType = btn.getAttribute('data-rule-filter') || 'all';
+        this.state.ruleRenderLimit = 150;
         this._renderRulesScreen();
       });
     });
 
     document.getElementById('rules-search-input')?.addEventListener('input', (e) => {
       this.state.ruleSearch = e.target.value;
+      this.state.ruleRenderLimit = 150;
+      this._renderRulesScreen();
+    });
+
+    document.getElementById('rules-load-more-btn')?.addEventListener('click', () => {
+      this.state.ruleRenderLimit = (Number(this.state.ruleRenderLimit) || 150) + 150;
       this._renderRulesScreen();
     });
 
@@ -1887,6 +2558,7 @@ export class AegisApp {
 
     document.getElementById('reset-defaults-btn')?.addEventListener('click', async () => {
       await this.storage.resetDefaults();
+      await this.storage.clearLastBulkImportBatch();
       await this.refreshAll();
       this.visualizer.setActive(Boolean(this.state.settings.vpnActive));
       this.engine.startBackgroundLoop(Boolean(this.state.settings.vpnActive));
@@ -1931,6 +2603,417 @@ export class AegisApp {
         this.showToast(`${count} regra(s) importada(s) com sucesso.`, 'success');
       } catch (err) {
         this.showToast(err.message || 'Falha ao validar o JSON.', 'danger');
+      }
+    });
+
+    // Pacotes Gratuitos de Defesa (Listas Abertas em Massa)
+    const setBulkStatus = (variant, message) => {
+      const statusEl = document.getElementById('bulk-import-status');
+      if (!statusEl) return;
+      statusEl.hidden = false;
+      statusEl.className = `bulk-import-status is-${variant}`;
+      statusEl.textContent = message;
+    };
+
+    const runBulkImportText = async (rawText, { sourceTag = 'bulk_text', fallbackCategory = 'manual', sourceLabel = 'texto' } = {}) => {
+      const categoryMode = document.getElementById('bulk-category-select')?.value || 'auto';
+      const respectAllowlist =
+        document.getElementById('bulk-respect-allowlist')?.checked !== false;
+
+      setBulkStatus('progress', `Analisando e categorizando domínios (${sourceLabel})...`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const parsed = parseBlocklistText(rawText, {
+        categoryMode,
+        fallbackCategory,
+      });
+
+      if (parsed.entries.length === 0) {
+        setBulkStatus(
+          'error',
+          'Nenhum domínio válido encontrado (linhas vazias e comentários "#" foram ignorados).'
+        );
+        this.showToast('Nenhum domínio válido encontrado na lista.', 'warn');
+        return;
+      }
+
+      const result = await importBlocklistBatch({
+        storage: this.storage,
+        entries: parsed.entries,
+        sourceTag,
+        sourceLabel,
+        respectAllowlist,
+        onProgress: ({ processed, total }) => {
+          setBulkStatus(
+            'progress',
+            `Gravando no IndexedDB em lotes sem travar a interface: ${processed}/${total} regras...`
+          );
+        },
+      });
+
+      this.state.ruleRenderLimit = 150;
+      await this.refreshAll();
+
+      const catSummary = Object.entries(parsed.stats.categoryCounts)
+        .map(([cat, count]) => `${CATEGORY_LABELS[cat] || cat}: ${count}`)
+        .join(' · ');
+
+      const truncMsg =
+        parsed.stats.truncatedCount > 0
+          ? ` (limite de 25.000/lote aplicado; ${parsed.stats.truncatedCount} excedentes ignorados)`
+          : '';
+
+      const undoHint =
+        result.added > 0
+          ? ' Use "Desfazer Última Importação" para reverter este lote.'
+          : '';
+
+      setBulkStatus(
+        'success',
+        `Importação concluída (${parsed.stats.parsedCount} domínios únicos válidos): ${result.added} adicionada(s), ${result.updated} atualizada(s), ${result.alreadyExisting || 0} já existente(s), ${result.skippedAllowlist} protegida(s) pela Allowlist. Categorias → ${catSummary}${truncMsg}.${undoHint}`
+      );
+      this.showToast(
+        `${result.added + result.updated} regra(s) carregada(s) no IndexedDB (${result.skippedAllowlist} Allowlist respeitada).`,
+        'success'
+      );
+    };
+
+    document.querySelectorAll('[data-bulk-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const presetId = btn.getAttribute('data-bulk-preset');
+        const preset = FREE_OPEN_BLOCKLISTS.find((item) => item.id === presetId);
+        if (!preset) return;
+        this.state.selectedBulkPreset = preset.id;
+        const urlInput = document.getElementById('bulk-list-url-input');
+        if (urlInput) {
+          urlInput.value = preset.url;
+        }
+        document.querySelectorAll('[data-bulk-preset]').forEach((card) => {
+          card.classList.toggle('is-selected', card === btn);
+        });
+        setBulkStatus(
+          'progress',
+          `Lista selecionada: ${preset.name}. Clique em "Baixar & Importar URL" para carregar.`
+        );
+      });
+    });
+
+    document.getElementById('bulk-import-url-btn')?.addEventListener('click', async () => {
+      const urlInput = document.getElementById('bulk-list-url-input');
+      const importBtn = document.getElementById('bulk-import-url-btn');
+      const rawUrl = urlInput?.value?.trim() || '';
+
+      let validUrl;
+      try {
+        validUrl = validatePublicListUrl(rawUrl);
+      } catch (err) {
+        setBulkStatus('error', err.message);
+        this.showToast(err.message, 'warn');
+        return;
+      }
+
+      const prevLabel = importBtn?.textContent || 'Baixar & Importar URL';
+      if (importBtn) {
+        importBtn.disabled = true;
+        importBtn.textContent = 'Baixando...';
+      }
+
+      try {
+        const preDecision = await this.engine.evaluatePreRequestDecision(validUrl, null, null, {
+          forceEvaluate: true,
+        });
+        if (preDecision?.shouldBlockBeforeNetwork) {
+          await this.engine.processRequest(validUrl, null, null, {
+            forceEvaluate: true,
+            preDecision,
+            probe: {
+              status: 'blocked_locally',
+              reachable: false,
+              latencyMs: 0,
+              targetUrl: validUrl,
+              blockedBeforeNetwork: true,
+              detail: 'Download externo bloqueado pelo motor de decisão local',
+            },
+          });
+          await this.refreshAll();
+          const msg = `Download bloqueado antes da rede pelo motor local (${preDecision.reason}).`;
+          setBulkStatus('error', msg);
+          this.showToast(msg, 'danger');
+          return;
+        }
+
+        const matchedPreset = FREE_OPEN_BLOCKLISTS.find((p) => p.url === validUrl);
+        const fallbackCategory = matchedPreset?.defaultCategory || 'tracker';
+        const hostname = new URL(validUrl).hostname;
+
+        setBulkStatus('progress', `Baixando lista aberta de ${hostname}...`);
+        const downloaded = await fetchPublicBlocklist(validUrl);
+        await runBulkImportText(downloaded.text, {
+          sourceTag: `url:${hostname}`,
+          fallbackCategory,
+          sourceLabel: matchedPreset?.name || hostname,
+        });
+      } catch (err) {
+        setBulkStatus('error', err?.message || 'Erro ao baixar a lista pública.');
+        this.showToast(err?.message || 'Erro ao importar URL.', 'danger');
+      } finally {
+        if (importBtn) {
+          importBtn.disabled = false;
+          importBtn.textContent = prevLabel;
+        }
+      }
+    });
+
+    document.getElementById('bulk-list-file')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const textarea = document.getElementById('bulk-list-textarea');
+        if (textarea) {
+          textarea.value =
+            text.length > 250_000
+              ? text.slice(0, 250_000) + '\n# ... (visualização truncada; arquivo completo pronto para importar)'
+              : text;
+        }
+        await runBulkImportText(text, {
+          sourceTag: `file:${file.name}`,
+          fallbackCategory: 'manual',
+          sourceLabel: file.name,
+        });
+      } catch (err) {
+        setBulkStatus('error', err?.message || 'Erro ao ler arquivo de lista.');
+        this.showToast(err?.message || 'Erro ao ler arquivo.', 'danger');
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    document.getElementById('bulk-import-text-btn')?.addEventListener('click', async () => {
+      const textarea = document.getElementById('bulk-list-textarea');
+      const rawText = textarea?.value || '';
+      if (!rawText.trim()) {
+        this.showToast('Cole os domínios ou carregue um arquivo .txt/.hosts antes de importar.', 'warn');
+        return;
+      }
+      await runBulkImportText(rawText, {
+        sourceTag: 'bulk_text',
+        fallbackCategory: 'manual',
+        sourceLabel: 'lista em texto',
+      });
+    });
+
+    document.getElementById('bulk-undo-btn')?.addEventListener('click', async () => {
+      const undoBtn = document.getElementById('bulk-undo-btn');
+      if (undoBtn) {
+        undoBtn.disabled = true;
+        undoBtn.textContent = 'Desfazendo...';
+      }
+
+      try {
+        const res = await undoLastBulkImport({
+          storage: this.storage,
+          onProgress: ({ processed, total }) => {
+            setBulkStatus(
+              'progress',
+              `Removendo apenas o último lote importado do IndexedDB: ${processed}/${total}...`
+            );
+          },
+        });
+
+        await this.refreshAll();
+
+        if (!res.undone) {
+          setBulkStatus('error', 'Não há lote recente disponível para desfazer.');
+          this.showToast('Nenhuma importação recente para desfazer.', 'info');
+          return;
+        }
+
+        const msg = `Última importação desfeita (${res.sourceLabel}): ${res.removedCount} regra(s) adicionada(s) removida(s)${
+          res.restoredCount > 0 ? ` e ${res.restoredCount} restaurada(s)` : ''
+        }.`;
+        setBulkStatus('success', msg);
+        this.showToast(msg, 'success');
+      } catch (err) {
+        await this.refreshAll();
+        setBulkStatus('error', err?.message || 'Erro ao desfazer a última importação.');
+        this.showToast(err?.message || 'Erro ao desfazer importação.', 'danger');
+      }
+    });
+
+    document.getElementById('clear-bulk-rules-btn')?.addEventListener('click', async () => {
+      const allRules = await this.storage.getAll('rules');
+      const remaining = allRules.filter((r) => !(typeof r.source === 'string' && r.source.length > 0));
+      const removedCount = allRules.length - remaining.length;
+      if (removedCount === 0) {
+        this.showToast('Nenhuma regra importada em massa para remover.', 'info');
+        return;
+      }
+      await this.storage.clearStore('rules');
+      if (remaining.length > 0) {
+        await this.storage.putMany('rules', remaining);
+      }
+      await this.storage.clearLastBulkImportBatch();
+      this.state.ruleRenderLimit = 150;
+      await this.refreshAll();
+      setBulkStatus(
+        'success',
+        `${removedCount} regra(s) importada(s) em massa removida(s). Regras padrão e Allowlist mantidas.`
+      );
+      this.showToast(`${removedCount} regra(s) em massa removida(s).`, 'info');
+    });
+
+    // Ponte Nativa Android (JSON de Políticas & Kotlin VpnService)
+    const triggerTextDownload = (filename, content, mimeType) => {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
+
+    document.getElementById('refresh-android-bridge-btn')?.addEventListener('click', () => {
+      this._renderAndroidBridgePanel();
+      this.showToast('Bloco Android sincronizado com o estado atual do IndexedDB.', 'success');
+    });
+
+    document.getElementById('copy-android-policy-btn')?.addEventListener('click', () => {
+      this._renderAndroidBridgePanel();
+      this._copyTextWithFeedback(
+        this._cachedAndroidFullPolicyJson,
+        'JSON de políticas para Android copiado! Cole ou importe no VpnService.'
+      );
+    });
+
+    document.getElementById('download-android-policy-btn')?.addEventListener('click', () => {
+      this._renderAndroidBridgePanel();
+      triggerTextDownload(
+        'aegis-policy.json',
+        this._cachedAndroidFullPolicyJson,
+        'application/json'
+      );
+      this.showToast('Arquivo aegis-policy.json gerado para o VpnService Android.', 'success');
+    });
+
+    document.getElementById('copy-android-kotlin-btn')?.addEventListener('click', () => {
+      this._copyTextWithFeedback(
+        ANDROID_KOTLIN_VPNSERVICE_CODE,
+        'Código-base Kotlin (AegisGuardVpnService.kt) copiado!'
+      );
+    });
+
+    document.getElementById('download-android-kotlin-btn')?.addEventListener('click', () => {
+      triggerTextDownload(
+        'AegisGuardVpnService.kt',
+        ANDROID_KOTLIN_VPNSERVICE_CODE,
+        'text/x-kotlin'
+      );
+      this.showToast('Arquivo AegisGuardVpnService.kt baixado.', 'success');
+    });
+
+    document.getElementById('copy-android-kotlin-bridge-btn')?.addEventListener('click', () => {
+      this._copyTextWithFeedback(
+        ANDROID_KOTLIN_VPNBRIDGE_CODE,
+        'Código-base Kotlin (AegisVpnBridge.kt) copiado!'
+      );
+    });
+
+    document.getElementById('download-android-kotlin-bridge-btn')?.addEventListener('click', () => {
+      triggerTextDownload(
+        'AegisVpnBridge.kt',
+        ANDROID_KOTLIN_VPNBRIDGE_CODE,
+        'text/x-kotlin'
+      );
+      this.showToast('Arquivo AegisVpnBridge.kt baixado.', 'success');
+    });
+
+    document.getElementById('copy-android-kotlin-main-btn')?.addEventListener('click', () => {
+      this._copyTextWithFeedback(
+        ANDROID_KOTLIN_MAINACTIVITY_CODE,
+        'Código-base Kotlin (MainActivity.kt) copiado!'
+      );
+    });
+
+    document.getElementById('download-android-kotlin-main-btn')?.addEventListener('click', () => {
+      triggerTextDownload(
+        'MainActivity.kt',
+        ANDROID_KOTLIN_MAINACTIVITY_CODE,
+        'text/x-kotlin'
+      );
+      this.showToast('Arquivo MainActivity.kt baixado.', 'success');
+    });
+
+    document.getElementById('copy-android-manifest-btn')?.addEventListener('click', () => {
+      this._copyTextWithFeedback(
+        ANDROID_MANIFEST_XML_CODE,
+        'Manifesto AndroidManifest.xml copiado!'
+      );
+    });
+
+    document.getElementById('download-android-manifest-btn')?.addEventListener('click', () => {
+      triggerTextDownload(
+        'AndroidManifest.xml',
+        ANDROID_MANIFEST_XML_CODE,
+        'application/xml'
+      );
+      this.showToast('Arquivo AndroidManifest.xml baixado.', 'success');
+    });
+
+    document.getElementById('copy-android-gradle-btn')?.addEventListener('click', () => {
+      this._copyTextWithFeedback(
+        ANDROID_GRADLE_KTS_CODE,
+        'Script build.gradle.kts copiado!'
+      );
+    });
+
+    document.getElementById('download-android-gradle-btn')?.addEventListener('click', () => {
+      triggerTextDownload(
+        'build.gradle.kts',
+        ANDROID_GRADLE_KTS_CODE,
+        'text/x-kotlin'
+      );
+      this.showToast('Arquivo build.gradle.kts baixado.', 'success');
+    });
+
+    document.getElementById('android-bridge-start-btn')?.addEventListener('click', () => {
+      this._renderAndroidBridgePanel();
+      const res = startNativeVpnWithPolicy(this._cachedAndroidFullPolicyJson);
+      this._pendingNativeVpnPermission = Boolean(res.ok && res.pendingPermission);
+      this._renderAndroidBridgePanel();
+      if (res.ok) {
+        this.showToast(
+          res.pendingPermission
+            ? 'Política aegis-policy.json gravada. Confirme a permissão de VPN no Android.'
+            : 'Política aegis-policy.json gravada e VpnService iniciado no Android.',
+          'success'
+        );
+      } else {
+        this.showToast(res.error || 'Bridge Android indisponível neste navegador.', 'warn');
+      }
+    });
+
+    document.getElementById('android-bridge-sync-btn')?.addEventListener('click', () => {
+      this._renderAndroidBridgePanel();
+      const res = updateNativeVpnPolicy(this._cachedAndroidFullPolicyJson);
+      this._renderAndroidBridgePanel();
+      if (res.ok) {
+        this.showToast('Arquivo aegis-policy.json atualizado na Bridge Android.', 'success');
+      } else {
+        this.showToast(res.error || 'Bridge Android indisponível neste navegador.', 'warn');
+      }
+    });
+
+    document.getElementById('android-bridge-stop-btn')?.addEventListener('click', () => {
+      const res = stopNativeVpn();
+      this._renderAndroidBridgePanel();
+      if (res.ok) {
+        this.showToast('Comando de parada enviado ao AegisGuardVpnService.', 'warn');
+      } else {
+        this.showToast(res.error || 'Não foi possível parar o túnel VPN Android.', 'danger');
       }
     });
   }

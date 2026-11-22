@@ -40,6 +40,8 @@ export const DEFAULT_SETTINGS = {
   burstThreshold: 6,
   autoBlockBots: true,
   alertSoundEnabled: true,
+  pushNotificationsEnabled: false,
+  vapidPublicKey: '',
 };
 
 export const SIGNATURE_GROUPS = [
@@ -363,94 +365,11 @@ export function createDefaultRules() {
 }
 
 function createInitialLogs() {
-  const now = Date.now();
-  return [
-    {
-      id: 'log_init_1',
-      timestamp: now - 48_000,
-      domain: 'headless-scraper.ai.test',
-      urlPath: '/v2/dom-harvest.js',
-      category: 'ai_crawler',
-      severity: 'high',
-      action: 'blocked',
-      reason: 'Bot de coleta de IA bloqueado: headless-scraper.ai.test',
-      isAmbient: true,
-    },
-    {
-      id: 'log_init_2',
-      timestamp: now - 38_000,
-      domain: 'gptbot.openai.test',
-      urlPath: '/crawler/index-feed',
-      category: 'ai_crawler',
-      severity: 'high',
-      action: 'blocked',
-      reason: 'Regra anti-IA: gptbot.openai.test',
-      isAmbient: true,
-    },
-    {
-      id: 'log_init_3',
-      timestamp: now - 28_000,
-      domain: 'cdn.optimizely.com',
-      urlPath: '/js/2419820144.js',
-      category: 'ab_testing',
-      severity: 'medium',
-      action: 'blocked',
-      reason: 'Script A/B bloqueado: optimizely.com',
-      isAmbient: true,
-    },
-    {
-      id: 'log_init_4',
-      timestamp: now - 20_000,
-      domain: 'cdn.jsdelivr.net',
-      urlPath: '/npm/chart.js@4.4.0/dist/chart.umd.min.js',
-      category: 'essential',
-      severity: 'low',
-      action: 'allowed',
-      reason: 'Permitido pela Allowlist: cdn.jsdelivr.net',
-      isAmbient: true,
-    },
-    {
-      id: 'log_init_5',
-      timestamp: now - 12_000,
-      domain: 'www.google-analytics.com',
-      urlPath: '/g/collect?v=2&tid=G-94K2',
-      category: 'tracker',
-      severity: 'medium',
-      action: 'blocked',
-      reason: 'Rastreador bloqueado: google-analytics.com',
-      isAmbient: true,
-    },
-    {
-      id: 'log_init_6',
-      timestamp: now - 5_000,
-      domain: 'fonts.googleapis.com',
-      urlPath: '/css2?family=Plus+Jakarta+Sans',
-      category: 'essential',
-      severity: 'low',
-      action: 'allowed',
-      reason: 'Permitido pela Allowlist: fonts.googleapis.com',
-      isAmbient: true,
-    },
-  ];
+  return [];
 }
 
 function createInitialAlerts() {
-  const now = Date.now();
-  return [
-    {
-      id: 'alert_init_1',
-      timestamp: now - 180_000,
-      type: 'burst',
-      severity: 'critical',
-      domain: 'swarm-harvester.ai.test',
-      requestCount: 11,
-      windowSeconds: 5,
-      description: 'Rajada anômala de coleta automatizada de IA (11 req em 5s) contida pelo escudo.',
-      resolved: true,
-      acknowledged: true,
-      acknowledgedAt: now - 160_000,
-    },
-  ];
+  return [];
 }
 
 export class AegisStorage {
@@ -600,6 +519,29 @@ export class AegisStorage {
     });
   }
 
+  async deleteMany(storeName, keys = []) {
+    if (!Array.isArray(keys) || keys.length === 0) return;
+    if (this.backend === 'localstorage' || !this.db) {
+      const keyName = storeName === 'settings' ? 'key' : 'id';
+      const keySet = new Set(keys);
+      const items = this._lsGet(storeName).filter((item) => !keySet.has(item[keyName]));
+      this._lsSet(storeName, items);
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      for (const key of keys) {
+        if (key !== undefined && key !== null) {
+          store.delete(key);
+        }
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   async clearStore(storeName) {
     if (this.backend === 'localstorage' || !this.db) {
       this._lsSet(storeName, []);
@@ -686,6 +628,44 @@ export class AegisStorage {
     return record;
   }
 
+  async getBackgroundCyclicState() {
+    const all = await this.getAll('settings');
+    return all.find((item) => item && item.key === 'bg_cyclic_counter') || null;
+  }
+
+  async saveBackgroundCyclicState(metrics) {
+    const record = {
+      key: 'bg_cyclic_counter',
+      ...metrics,
+      updatedAt: Date.now(),
+    };
+    await this.put('settings', record);
+    return record;
+  }
+
+  async getLastBulkImportBatch() {
+    const all = await this.getAll('settings');
+    return all.find((item) => item && item.key === 'last_bulk_import_batch') || null;
+  }
+
+  async saveLastBulkImportBatch(batch) {
+    if (!batch) return null;
+    const record = {
+      key: 'last_bulk_import_batch',
+      batchId: batch.batchId || `batch_${Date.now()}`,
+      sourceLabel: batch.sourceLabel || 'lista',
+      createdAt: batch.createdAt || Date.now(),
+      addedIds: Array.isArray(batch.addedIds) ? batch.addedIds : [],
+      updatedBackups: Array.isArray(batch.updatedBackups) ? batch.updatedBackups : [],
+    };
+    await this.put('settings', record);
+    return record;
+  }
+
+  async clearLastBulkImportBatch() {
+    await this.delete('settings', 'last_bulk_import_batch');
+  }
+
   async seedIfEmpty() {
     const [existingRules, existingSettings, existingSignatures] = await Promise.all([
       this.getAll('rules'),
@@ -713,11 +693,17 @@ export class AegisStorage {
       await this.putMany('rules', defaultRules);
       const existingLogs = await this.getAll('logs');
       if (existingLogs.length === 0) {
-        await this.putMany('logs', createInitialLogs());
+        const initLogs = createInitialLogs();
+        if (initLogs.length > 0) {
+          await this.putMany('logs', initLogs);
+        }
       }
       const existingAlerts = await this.getAll('alerts');
       if (existingAlerts.length === 0) {
-        await this.putMany('alerts', createInitialAlerts());
+        const initAlerts = createInitialAlerts();
+        if (initAlerts.length > 0) {
+          await this.putMany('alerts', initAlerts);
+        }
       }
     } else {
       const ruleIds = new Set(existingRules.map((r) => r.id));
@@ -727,6 +713,32 @@ export class AegisStorage {
       if (missingSensorRules.length > 0) {
         await this.putMany('rules', missingSensorRules);
       }
+    }
+
+    // One-time cleanup of legacy ambient mock logs from older versions
+    const hasMigratedReal = existingSettings.some(
+      (s) => s && s.key === 'migration_real_connectivity_v1'
+    );
+    if (!hasMigratedReal) {
+      const [allLogs, allAlerts] = await Promise.all([
+        this.getAll('logs'),
+        this.getAll('alerts'),
+      ]);
+      const realLogs = allLogs.filter((l) => l && !l.isAmbient);
+      if (realLogs.length !== allLogs.length) {
+        await this.clearStore('logs');
+        if (realLogs.length > 0) {
+          await this.putMany('logs', realLogs);
+        }
+      }
+      const hasLegacyInitAlert = allAlerts.some((a) => a && a.id === 'alert_init_1');
+      if (hasLegacyInitAlert) {
+        await this.delete('alerts', 'alert_init_1');
+      }
+      await this.put('settings', {
+        key: 'migration_real_connectivity_v1',
+        completedAt: Date.now(),
+      });
     }
   }
 
@@ -889,7 +901,9 @@ export function normalizeDomain(input) {
   cleaned = cleaned.replace(/^https?:\/\//, '');
   cleaned = cleaned.split('/')[0];
   cleaned = cleaned.split('?')[0];
+  cleaned = cleaned.split('#')[0];
   cleaned = cleaned.split(':')[0];
+  cleaned = cleaned.replace(/\.+$/, '');
   return cleaned;
 }
 

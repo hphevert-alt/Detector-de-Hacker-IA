@@ -40,6 +40,8 @@ public class AegisBackgroundService extends Service {
     public static final String KEY_STOPPED_BY_NOTIF = "stoppedByNotification";
     public static final String KEY_DNS_LABEL = "dnsLabel";
     public static final String KEY_RULES_COUNT = "rulesCount";
+    public static final String KEY_LAST_ELAPSED_MS = "lastElapsedMs";
+    public static final String KEY_LAST_DRIFT_MS = "lastDriftMs";
 
     private static final String CHANNEL_ID = "aegis_background_guard";
     private static final int NOTIFICATION_ID = 7401;
@@ -92,6 +94,8 @@ public class AegisBackgroundService extends Service {
             .putBoolean(KEY_STOPPED_BY_NOTIF, false)
             .putLong(KEY_STARTED_AT, startedAt)
             .putLong(KEY_LAST_TICK_AT, now)
+            .putLong(KEY_LAST_ELAPSED_MS, SystemClock.elapsedRealtime())
+            .putLong(KEY_LAST_DRIFT_MS, 0L)
             .putString(KEY_DNS_LABEL, dnsLabel)
             .putInt(KEY_RULES_COUNT, rulesCount)
             .apply();
@@ -218,6 +222,9 @@ public class AegisBackgroundService extends Service {
         }
 
         long now = System.currentTimeMillis();
+        long elapsedNow = SystemClock.elapsedRealtime();
+        long prevElapsed = prefs.getLong(KEY_LAST_ELAPSED_MS, 0L);
+        long driftMs = prevElapsed > 0 ? Math.max(0L, (elapsedNow - prevElapsed) - 15000L) : 0L;
         long startedAt = prefs.getLong(KEY_STARTED_AT, now);
         String dnsLabel = prefs.getString(KEY_DNS_LABEL, "1.1.1.2 (DoH)");
         int rulesCount = prefs.getInt(KEY_RULES_COUNT, 19);
@@ -225,6 +232,8 @@ public class AegisBackgroundService extends Service {
         prefs.edit()
             .putInt(KEY_PENDING_CYCLES, cycles)
             .putLong(KEY_LAST_TICK_AT, now)
+            .putLong(KEY_LAST_ELAPSED_MS, elapsedNow)
+            .putLong(KEY_LAST_DRIFT_MS, driftMs)
             .putString(KEY_LAST_NET_SIG, currentNet)
             .putInt(KEY_NET_EVENTS, netEvents)
             .apply();
@@ -304,8 +313,13 @@ public class AegisBackgroundService extends Service {
             .build();
     }
 
+    public static final String CRITICAL_CHANNEL_ID = "aegis_critical_threats";
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager == null) return;
+
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "AEGIS AI Vigilância em Segundo Plano",
@@ -313,10 +327,17 @@ public class AegisBackgroundService extends Service {
             );
             channel.setDescription("Mantém o monitoramento do AEGIS AI ativo enquanto você usa outros aplicativos.");
             channel.setShowBadge(false);
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
+            manager.createNotificationChannel(channel);
+
+            NotificationChannel criticalChannel = new NotificationChannel(
+                CRITICAL_CHANNEL_ID,
+                "AEGIS AI Alertas Críticos de Invasão",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            criticalChannel.setDescription("Notificações imediatas quando o motor heurístico detecta ameaças de nível Crítico.");
+            criticalChannel.enableVibration(true);
+            criticalChannel.setShowBadge(true);
+            manager.createNotificationChannel(criticalChannel);
         }
     }
 }

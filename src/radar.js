@@ -1,29 +1,55 @@
 import { normalizeDomain, parseDomainAndPath } from './db.js';
 
-const TRAFFIC_CATALOG = [
-  { domain: 'gptbot.openai.test', urlPath: '/crawler/index-feed', category: 'ai_crawler' },
-  { domain: 'bytespider.bytedance.test', urlPath: '/spider/v1/extract', category: 'ai_crawler' },
-  { domain: 'ccbot.commoncrawl.test', urlPath: '/crawl/snapshot.json', category: 'ai_crawler' },
-  { domain: 'claudebot.anthropic.test', urlPath: '/bot/scrape-html', category: 'ai_crawler' },
-  { domain: 'headless-scraper.ai.test', urlPath: '/v2/dom-harvest.js', category: 'ai_crawler' },
-  { domain: 'cdn.optimizely.com', urlPath: '/js/2419820144.js', category: 'ab_testing' },
-  { domain: 'dev.visualwebsiteoptimizer.com', urlPath: '/j.php?a=70291&u=app', category: 'ab_testing' },
-  { domain: 'static.hotjar.com', urlPath: '/c/hotjar-391022.js?sv=6', category: 'ab_testing' },
-  { domain: 'edge.fullstory.com', urlPath: '/s/fs.js', category: 'third_party' },
-  { domain: 'www.google-analytics.com', urlPath: '/g/collect?v=2&tid=G-94K2', category: 'tracker' },
-  { domain: 'stats.g.doubleclick.net', urlPath: '/r/collect?v=1', category: 'tracker' },
-  { domain: 'connect.facebook.net', urlPath: '/pt_BR/fbevents.js', category: 'tracker' },
-  { domain: 'cdn.segment.com', urlPath: '/analytics.js/v1/key/analytics.min.js', category: 'third_party' },
-  { domain: 'cdn.jsdelivr.net', urlPath: '/npm/lucide@0.400.0/dist/umd/lucide.min.js', category: 'essential' },
-  { domain: 'fonts.googleapis.com', urlPath: '/css2?family=IBM+Plex+Mono', category: 'essential' },
-  { domain: 'api.escudo-local.dev', urlPath: '/v1/health/check', category: 'essential' },
-];
+function createTimeoutSignal(timeoutMs = 4000) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return { signal: AbortSignal.timeout(timeoutMs), cleanup: () => {} };
+  }
+  if (typeof AbortController !== 'undefined') {
+    const controller = new AbortController();
+    const timerId = window.setTimeout(() => {
+      controller.abort(new Error('TimeoutError'));
+    }, timeoutMs);
+    return {
+      signal: controller.signal,
+      cleanup: () => window.clearTimeout(timerId),
+    };
+  }
+  return { signal: undefined, cleanup: () => {} };
+}
 
 export function domainMatches(targetDomain, ruleDomain) {
   const target = normalizeDomain(targetDomain);
   const rule = normalizeDomain(ruleDomain);
   if (!target || !rule) return false;
   return target === rule || target.endsWith('.' + rule);
+}
+
+export function findMatchingRuleInIndex(ruleMap, targetDomain) {
+  let current = normalizeDomain(targetDomain);
+  while (current) {
+    const found = ruleMap.get(current);
+    if (found) return found;
+    const dot = current.indexOf('.');
+    if (dot === -1) break;
+    current = current.slice(dot + 1);
+  }
+  return null;
+}
+
+export function buildRuleLookupMaps(rules = []) {
+  const allowMap = new Map();
+  const blockMap = new Map();
+  for (const r of rules) {
+    if (!r || !r.enabled || !r.domain) continue;
+    const clean = normalizeDomain(r.domain);
+    if (!clean) continue;
+    if (r.type === 'allow') {
+      if (!allowMap.has(clean)) allowMap.set(clean, r);
+    } else if (r.type === 'block') {
+      if (!blockMap.has(clean)) blockMap.set(clean, r);
+    }
+  }
+  return { allowMap, blockMap };
 }
 
 export function shannonEntropy(str) {
@@ -83,44 +109,23 @@ export class AegisRadarEngine {
     this.storage = storage;
     this.onUpdate = onUpdate;
     this.timerId = null;
+    this.isActive = true;
+    this.isOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
     this.slidingWindows = new Map();
     this.recentBurstAlerts = new Map();
     this.radarBlips = [];
   }
 
+  setOnline(online) {
+    this.isOnline = Boolean(online);
+  }
+
   startBackgroundLoop(isActive) {
     this.stopBackgroundLoop();
-    if (!isActive) return;
-
-    const essentialPool = TRAFFIC_CATALOG.filter((item) => item.category === 'essential');
-    const trackerPool = TRAFFIC_CATALOG.filter(
-      (item) => item.category === 'tracker' || item.category === 'third_party'
-    );
-    const aiPool = TRAFFIC_CATALOG.filter(
-      (item) => item.category === 'ai_crawler' || item.category === 'ab_testing'
-    );
-
-    const scheduleNext = (initial = false) => {
-      const delay = initial ? 350 : 1800 + Math.floor(Math.random() * 1400);
-      this.timerId = window.setTimeout(async () => {
-        const settings = await this.storage.getSettings();
-        if (!settings.vpnActive) return;
-        const roll = initial ? 0.8 : Math.random();
-        const pool =
-          roll < 0.65
-            ? essentialPool
-            : roll < 0.9
-            ? trackerPool
-            : aiPool;
-        const sample = pool[Math.floor(Math.random() * pool.length)] || TRAFFIC_CATALOG[0];
-        await this.processRequest(sample.domain, sample.urlPath, sample.category, {
-          isAmbient: true,
-        });
-        scheduleNext(false);
-      }, delay);
-    };
-
-    scheduleNext(true);
+    this.isActive = Boolean(isActive);
+    // Sem geração automática de tráfego simulado:
+    // logs são gravados apenas por inspeção real sob demanda, refresh suspeito,
+    // eventos reais de rede ou cenários disparados manualmente no Simulador.
   }
 
   stopBackgroundLoop() {
@@ -128,6 +133,191 @@ export class AegisRadarEngine {
       window.clearTimeout(this.timerId);
       this.timerId = null;
     }
+  }
+
+  async evaluatePreRequestDecision(rawInput, customPath = null, forcedCategory = null, options = {}) {
+    const parsed = parseDomainAndPath(rawInput);
+    const domain = parsed.domain;
+    const urlPath = customPath || parsed.urlPath;
+    if (!domain) return null;
+
+    const [settings, rules, signatures] = await Promise.all([
+      this.storage.getSettings(),
+      this.storage.getAll('rules'),
+      this.storage.getAll('signatures'),
+    ]);
+
+    const sigActive = (sigId) => {
+      const found = signatures.find((s) => s.id === sigId);
+      return found ? Boolean(found.enabled) : true;
+    };
+
+    const inferredCat = inferCategory(domain, urlPath);
+    const primaryLabel = domain.split('.')[0] || '';
+    const isDgaCandidate =
+      sigActive('sig_dga_entropy') &&
+      primaryLabel.length >= 12 &&
+      shannonEntropy(primaryLabel) >= 3.6;
+
+    const { allowMap, blockMap } = buildRuleLookupMaps(rules);
+
+    let action = 'allowed';
+    let reason = `Resolvido via ${settings.dnsIp} (${settings.dnsProtocol})`;
+    let matchedRule = null;
+    let resolvedCategory = forcedCategory || inferredCat;
+
+    if (!settings.vpnActive && !options.forceEvaluate) {
+      action = 'allowed';
+      reason = 'Vigilância VPN pausada · tráfego sem bloqueio';
+    } else {
+      const allowRule = findMatchingRuleInIndex(allowMap, domain);
+      if (allowRule) {
+        action = 'allowed';
+        reason = `Permitido pela Allowlist: ${allowRule.domain}`;
+        matchedRule = allowRule;
+      } else {
+        const blockRule = findMatchingRuleInIndex(blockMap, domain);
+        if (blockRule) {
+          action = 'blocked';
+          reason = `Bloqueio real ativo · regra ${blockRule.domain}`;
+          matchedRule = blockRule;
+          if (!forcedCategory && blockRule.category && blockRule.category !== 'manual') {
+            resolvedCategory = blockRule.category;
+          }
+        } else if (
+          resolvedCategory === 'media_leak' &&
+          (sigActive('sig_webrtc_stun') || sigActive('sig_hidden_media_upload'))
+        ) {
+          action = 'blocked';
+          reason =
+            'Sentinela de Sensores: canal STUN/TURN não autorizado ou upload oculto de mídia barrado';
+        } else if (isDgaCandidate) {
+          action = 'blocked';
+          reason = `Heurística DGA: domínio de alta entropia (${shannonEntropy(primaryLabel).toFixed(2)})`;
+        } else if (resolvedCategory === 'ai_crawler' && sigActive('sig_ai_crawlers')) {
+          action = 'blocked';
+          reason = 'Assinatura anti-IA: crawler/bot automatizado (GPTBot/Bytespider/CCBot)';
+        } else if (
+          resolvedCategory === 'ab_testing' &&
+          (/hotjar|fullstory|clarity/.test(domain)
+            ? sigActive('sig_session_replay')
+            : sigActive('sig_ab_testing'))
+        ) {
+          action = 'blocked';
+          reason = 'Assinatura Supply Chain: teste A/B ou session replay bloqueado';
+        } else if (/headless|playwright|puppeteer/.test(`${domain}${urlPath}`) && sigActive('sig_headless_ua')) {
+          action = 'blocked';
+          reason = 'Assinatura Cabeçalho: User-Agent Headless/Automação barrado';
+        } else if (resolvedCategory === 'ab_testing' || resolvedCategory === 'tracker') {
+          reason = `Monitorado via ${settings.dnsIp} · sem bloqueio explícito`;
+        }
+      }
+    }
+
+    return {
+      domain,
+      urlPath,
+      settings,
+      rules,
+      signatures,
+      allowMap,
+      blockMap,
+      category: resolvedCategory,
+      isDgaCandidate,
+      action,
+      reason,
+      matchedRule,
+      shouldBlockBeforeNetwork: action === 'blocked',
+    };
+  }
+
+  async inspectDomainManually(rawInput) {
+    const trimmed = String(rawInput || '').trim();
+    const parsed = parseDomainAndPath(trimmed);
+    if (!parsed.domain) return null;
+
+    const scheme = /^http:\/\//i.test(trimmed) ? 'http://' : 'https://';
+    const targetUrl = `${scheme}${parsed.domain}${parsed.urlPath || '/'}`;
+    const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    this.isOnline = online;
+
+    // Decisão em tempo real ANTES de qualquer requisição externa
+    const preDecision = await this.evaluatePreRequestDecision(trimmed, null, null, {
+      forceEvaluate: true,
+    });
+
+    let probe;
+    if (preDecision?.shouldBlockBeforeNetwork) {
+      probe = {
+        status: 'blocked_locally',
+        reachable: false,
+        latencyMs: 0,
+        targetUrl,
+        blockedBeforeNetwork: true,
+        detail: 'Requisição externa abortada antes da rede pelo escudo local',
+      };
+    } else if (!online) {
+      probe = {
+        status: 'offline',
+        reachable: false,
+        latencyMs: null,
+        targetUrl,
+        detail: 'Rede offline · tentativa externa ignorada sem conexão à internet',
+      };
+    } else {
+      const startMs =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      const { signal, cleanup } = createTimeoutSignal(4000);
+      try {
+        await fetch(targetUrl, {
+          mode: 'no-cors',
+          cache: 'no-store',
+          signal,
+        });
+        const endMs =
+          typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        const latencyMs = Math.max(1, Math.round(endMs - startMs));
+        probe = {
+          status: 'reachable',
+          reachable: true,
+          latencyMs,
+          targetUrl,
+          detail: `Conexão/resolução real alcançada em ${latencyMs} ms`,
+        };
+      } catch (err) {
+        const endMs =
+          typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        const latencyMs = Math.max(1, Math.round(endMs - startMs));
+        const isTimeout =
+          err?.name === 'TimeoutError' ||
+          err?.name === 'AbortError' ||
+          /timeout|abort/i.test(String(err?.message || ''));
+        probe = {
+          status: isTimeout ? 'timeout' : 'unreachable',
+          reachable: false,
+          latencyMs,
+          targetUrl,
+          detail: isTimeout
+            ? `Timeout na conexão real após ${latencyMs} ms (limite 4000 ms)`
+            : `Falha de DNS/conexão real em ${latencyMs} ms`,
+        };
+      } finally {
+        cleanup();
+      }
+    }
+
+    const result = await this.processRequest(trimmed, null, null, {
+      forceEvaluate: true,
+      probe,
+      preDecision,
+    });
+    return result ? { ...result, probe } : null;
   }
 
   async detectRealRapidRefresh() {
@@ -160,82 +350,25 @@ export class AegisRadarEngine {
   }
 
   async processRequest(rawInput, customPath = null, forcedCategory = null, options = {}) {
-    const parsed = parseDomainAndPath(rawInput);
-    const domain = parsed.domain;
-    const urlPath = customPath || parsed.urlPath;
-    if (!domain) return null;
+    const decision =
+      options.preDecision ||
+      (await this.evaluatePreRequestDecision(rawInput, customPath, forcedCategory, options));
+    if (!decision) return null;
 
-    const [settings, rules, signatures] = await Promise.all([
-      this.storage.getSettings(),
-      this.storage.getAll('rules'),
-      this.storage.getAll('signatures'),
-    ]);
+    const {
+      domain,
+      urlPath,
+      settings,
+      rules,
+      signatures,
+      category,
+      isDgaCandidate,
+      action,
+      reason,
+      matchedRule,
+    } = decision;
 
-    const sigActive = (sigId) => {
-      const found = signatures.find((s) => s.id === sigId);
-      return found ? Boolean(found.enabled) : true;
-    };
-
-    const category = forcedCategory || inferCategory(domain, urlPath);
     const now = Date.now();
-    const primaryLabel = domain.split('.')[0] || '';
-    const isDgaCandidate =
-      sigActive('sig_dga_entropy') &&
-      primaryLabel.length >= 12 &&
-      shannonEntropy(primaryLabel) >= 3.6;
-
-    let action = 'allowed';
-    let reason = `Resolvido via ${settings.dnsIp} (${settings.dnsProtocol})`;
-    let matchedRule = null;
-
-    if (!settings.vpnActive && !options.forceEvaluate) {
-      action = 'allowed';
-      reason = 'Vigilância VPN pausada · tráfego sem bloqueio';
-    } else {
-      const allowRule = rules.find(
-        (r) => r.enabled && r.type === 'allow' && domainMatches(domain, r.domain)
-      );
-      if (allowRule) {
-        action = 'allowed';
-        reason = `Permitido pela Allowlist: ${allowRule.domain}`;
-        matchedRule = allowRule;
-      } else {
-        const blockRule = rules.find(
-          (r) => r.enabled && r.type === 'block' && domainMatches(domain, r.domain)
-        );
-        if (blockRule) {
-          action = 'blocked';
-          reason = `Escudo ativo · regra ${blockRule.domain}`;
-          matchedRule = blockRule;
-        } else if (
-          category === 'media_leak' &&
-          (sigActive('sig_webrtc_stun') || sigActive('sig_hidden_media_upload'))
-        ) {
-          action = 'blocked';
-          reason =
-            'Sentinela de Sensores: canal STUN/TURN não autorizado ou upload oculto de mídia barrado';
-        } else if (isDgaCandidate) {
-          action = 'blocked';
-          reason = `Heurística DGA: domínio de alta entropia (${shannonEntropy(primaryLabel).toFixed(2)})`;
-        } else if (category === 'ai_crawler' && sigActive('sig_ai_crawlers')) {
-          action = 'blocked';
-          reason = 'Assinatura anti-IA: crawler/bot automatizado (GPTBot/Bytespider/CCBot)';
-        } else if (
-          category === 'ab_testing' &&
-          (/hotjar|fullstory|clarity/.test(domain)
-            ? sigActive('sig_session_replay')
-            : sigActive('sig_ab_testing'))
-        ) {
-          action = 'blocked';
-          reason = 'Assinatura Supply Chain: teste A/B ou session replay bloqueado';
-        } else if (/headless|playwright|puppeteer/.test(`${domain}${urlPath}`) && sigActive('sig_headless_ua')) {
-          action = 'blocked';
-          reason = 'Assinatura Cabeçalho: User-Agent Headless/Automação barrado';
-        } else if (category === 'ab_testing' || category === 'tracker') {
-          reason = `Monitorado via ${settings.dnsIp} · sem bloqueio explícito`;
-        }
-      }
-    }
 
     if (matchedRule) {
       matchedRule.hits = (matchedRule.hits || 0) + 1;
@@ -249,6 +382,9 @@ export class AegisRadarEngine {
 
     const severity = computeSeverity(category, action, anomalyTriggered || isDgaCandidate);
 
+    const probe = options.probe || null;
+    const combinedReason = probe ? `${reason} · ${probe.detail}` : reason;
+
     const logEntry = {
       id: `log_${now}_${Math.random().toString(36).slice(2, 7)}`,
       timestamp: now,
@@ -257,8 +393,17 @@ export class AegisRadarEngine {
       category: isDgaCandidate ? 'anomaly' : category,
       severity,
       action,
-      reason,
+      reason: combinedReason,
       isAmbient: Boolean(options.isAmbient),
+      ...(probe
+        ? {
+            probeStatus: probe.status,
+            latencyMs: probe.latencyMs,
+            online: probe.status !== 'offline' && probe.status !== 'blocked_locally',
+            blockedBeforeNetwork: Boolean(probe.blockedBeforeNetwork),
+            targetUrl: probe.targetUrl,
+          }
+        : {}),
     };
 
     await this.storage.put('logs', logEntry);
@@ -359,8 +504,15 @@ export class AegisRadarEngine {
   }
 
   async simulateMixedTraffic() {
-    const picked = [...TRAFFIC_CATALOG].sort(() => Math.random() - 0.5).slice(0, 6);
-    for (const item of picked) {
+    const scenarios = [
+      { domain: 'gptbot.openai.test', urlPath: '/crawler/index-feed', category: 'ai_crawler' },
+      { domain: 'claudebot.anthropic.test', urlPath: '/bot/scrape-html', category: 'ai_crawler' },
+      { domain: 'cdn.optimizely.com', urlPath: '/js/2419820144.js', category: 'ab_testing' },
+      { domain: 'www.google-analytics.com', urlPath: '/g/collect?v=2&tid=G-94K2', category: 'tracker' },
+      { domain: 'cdn.jsdelivr.net', urlPath: '/npm/lucide@0.400.0/dist/umd/lucide.min.js', category: 'essential' },
+      { domain: 'fonts.googleapis.com', urlPath: '/css2?family=IBM+Plex+Mono', category: 'essential' },
+    ];
+    for (const item of scenarios) {
       await this.processRequest(item.domain, item.urlPath, item.category, { forceEvaluate: true });
     }
   }
@@ -590,12 +742,20 @@ export class RadarVisualizer {
     this.engine = engine;
     this.sweepAngle = 0;
     this.isActive = true;
+    this.isOnline = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
     this.rafId = null;
     this.prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   setActive(active) {
-    this.isActive = active;
+    this.isActive = Boolean(active);
+    if (!this.rafId) {
+      this.drawFrame();
+    }
+  }
+
+  setOnline(online) {
+    this.isOnline = Boolean(online);
     if (!this.rafId) {
       this.drawFrame();
     }
@@ -604,7 +764,7 @@ export class RadarVisualizer {
   start() {
     const render = () => {
       this.drawFrame();
-      if (this.isActive && !this.prefersReducedMotion) {
+      if (this.isActive && this.isOnline && !this.prefersReducedMotion) {
         this.sweepAngle = (this.sweepAngle + 0.025) % (Math.PI * 2);
       }
       this.rafId = window.requestAnimationFrame(render);
@@ -634,7 +794,10 @@ export class RadarVisualizer {
     ctx.fillStyle = '#080d17';
     ctx.fill();
     ctx.lineWidth = 1.25;
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+    ctx.strokeStyle =
+      this.isActive && !this.isOnline
+        ? 'rgba(245, 158, 11, 0.36)'
+        : 'rgba(148, 163, 184, 0.22)';
     ctx.stroke();
 
     [0.33, 0.66].forEach((ratio) => {
@@ -653,7 +816,7 @@ export class RadarVisualizer {
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.1)';
     ctx.stroke();
 
-    if (this.isActive) {
+    if (this.isActive && this.isOnline) {
       const sweepSpan = 0.55;
       const grad = ctx.createRadialGradient(cx, cy, 4, cx, cy, maxR);
       grad.addColorStop(0, 'rgba(14, 165, 233, 0.25)');
@@ -679,7 +842,7 @@ export class RadarVisualizer {
 
     ctx.beginPath();
     ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = this.isActive ? '#10b981' : '#d97706';
+    ctx.fillStyle = !this.isActive ? '#d97706' : this.isOnline ? '#10b981' : '#f59e0b';
     ctx.fill();
 
     const now = Date.now();
@@ -702,5 +865,33 @@ export class RadarVisualizer {
       ctx.fillStyle = color;
       ctx.fill();
     });
+
+    if (this.isActive && !this.isOnline) {
+      const boxW = Math.min(maxR * 1.65, 200);
+      const boxH = 44;
+      const boxX = cx - boxW / 2;
+      const boxY = cy - boxH / 2;
+
+      ctx.fillStyle = 'rgba(8, 13, 23, 0.88)';
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(boxX, boxY, boxW, boxH, 8);
+      } else {
+        ctx.rect(boxX, boxY, boxW, boxH);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '700 11px "IBM Plex Mono", monospace';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText('REDE OFFLINE', cx, cy - 8);
+      ctx.font = '500 10.5px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText('Varredura externa pausada', cx, cy + 9);
+    }
   }
 }

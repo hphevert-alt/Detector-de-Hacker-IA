@@ -3,6 +3,9 @@ package com.hevertpereira.aegisai;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -16,6 +19,7 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Base64;
 
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 import java.io.File;
@@ -272,6 +276,72 @@ public class AegisBackgroundPlugin extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Erro ao salvar relatório: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void notifyCriticalThreat(PluginCall call) {
+        String severity = call.getString("severity", "critical");
+        if (!"critical".equalsIgnoreCase(severity)) {
+            JSObject ret = new JSObject();
+            ret.put("sent", false);
+            call.resolve(ret);
+            return;
+        }
+
+        Context context = getContext();
+        String title = call.getString("title", "AEGIS AI · Ameaça Crítica Detectada");
+        String body = call.getString("body", "Invasão crítica contida pelo motor heurístico.");
+        String alertId = call.getString("alertId", String.valueOf(System.currentTimeMillis()));
+
+        try {
+            NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    NotificationChannel ch = new NotificationChannel(
+                        AegisBackgroundService.CRITICAL_CHANNEL_ID,
+                        "AEGIS AI Alertas Críticos de Invasão",
+                        NotificationManager.IMPORTANCE_HIGH
+                    );
+                    ch.enableVibration(true);
+                    manager.createNotificationChannel(ch);
+                }
+
+                Intent openIntent = new Intent(context, MainActivity.class);
+                openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                int pendingFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                    : PendingIntent.FLAG_UPDATE_CURRENT;
+                PendingIntent openPending = PendingIntent.getActivity(context, 42, openIntent, pendingFlags);
+
+                int iconRes = context.getApplicationInfo().icon != 0
+                    ? context.getApplicationInfo().icon
+                    : android.R.drawable.ic_dialog_alert;
+
+                NotificationCompat.Builder builder = new NotificationCompat.Builder(
+                    context,
+                    AegisBackgroundService.CRITICAL_CHANNEL_ID
+                )
+                    .setSmallIcon(iconRes)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setAutoCancel(true)
+                    .setContentIntent(openPending);
+
+                int notifId = 8000 + Math.abs(alertId.hashCode() % 1000);
+                manager.notify(notifId, builder.build());
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("sent", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            JSObject ret = new JSObject();
+            ret.put("sent", false);
+            call.resolve(ret);
         }
     }
 }
